@@ -148,7 +148,7 @@ Report coach(const std::vector<PlayStats>& plays, std::vector<Day>& hist, int64_
     for (int s = 1; s < NSKILL; s++) {
         r.actual[s] = act.obj[s] ? (float)(act.miss[s] / act.obj[s]) : 0;
         r.expected[s] = act.obj[s] ? (float)(expMiss[s] / act.obj[s]) : 0;
-        if (!r.needHistory && act.obj[s] > 0)
+        if (!r.needHistory && act.obj[s] > 0 && act.miss[s] + expMiss[s] >= 5)  // fewer misses than that is noise
             r.radar[s] = (float)std::clamp(50 + 25 * std::log2((expMiss[s] + 1) / (act.miss[s] + 1)), 0.0, 100.0);
     }
     r.actual[TIMING] = (float)recentErr.ur();
@@ -270,7 +270,7 @@ MapFeat features(const Beatmap& b) {
     }
     if (sp.empty()) return f;
     int inStream = 0;
-    for (auto [i, j] : findStreams(sp, gap)) inStream += (int)(j - i), f.longRun = std::max(f.longRun, (int)(j - i));
+    for (auto [i, j] : findStreams(sp, gap, streamMaxGap(b.bpm))) inStream += (int)(j - i), f.longRun = std::max(f.longRun, (int)(j - i));
     f.jump = n ? (float)jumps / n : 0, f.rhythm = n ? (float)rhythm / n : 0;
     f.stream = (float)inStream / sp.size(), f.slider = (float)sliders / sp.size();
     return f;
@@ -321,7 +321,7 @@ std::vector<Suggestion> suggest(const std::vector<DbMap>& db, const std::vector<
         }
         int n = recent.count(m->md5) ? recent[m->md5] : 0;
         sc *= n <= 3 ? 1.2f : n > 10 ? 0.5f : 1.f;
-        why += fmt(", %.2f\xE2\x98\x85, played %d times in 30 days", stars, n);
+        why += fmt(", %.2f\xE2\x98\x85, %d plays in the last 30 days", stars, n);
         if (sc > 0) out.push_back({m, stars, sc, why});
     }
     std::sort(out.begin(), out.end(), [](auto& a, auto& b) { return a.score > b.score; });

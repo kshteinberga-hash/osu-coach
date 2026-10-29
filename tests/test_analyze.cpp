@@ -97,7 +97,16 @@ static void test_stream() {
     CHECK(s.objs[3].inStream);
 }
 
+static void test_half_not_stream() {
+    Beatmap b = map3();
+    b.bpm = 180, b.objs.clear();
+    for (int i = 0; i < 6; i++) b.objs.push_back({100.f + 30 * i, 100, 1000 + 167 * i, 1000 + 167 * i, 0, i == 0});
+    auto s = analyze(rep({{1000, 100, 100}}), b, 4);
+    CHECK(s.streams.empty());
+}
+
 void analyzeTests() {
+    test_half_not_stream();
     test_perfect();
     test_aim_undershoot();
     test_timing();

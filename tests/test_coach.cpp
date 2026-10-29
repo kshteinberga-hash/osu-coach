@@ -107,6 +107,7 @@ static void test_features() {
     NEAR(f.jump, 1, 0.01);
     CHECK(f.stream == 0);
     b.objs.clear();
+    b.bpm = 150;  // 100 ms = 1/4
     for (int i = 0; i < 12; i++) b.objs.push_back({50.f + 1.5f * r * i, 192, 1000 + 100 * i, 1000 + 100 * i, 0, false});
     f = features(b);
     NEAR(f.stream, 1, 0.01);

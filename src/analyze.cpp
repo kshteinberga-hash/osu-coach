@@ -10,12 +10,12 @@ double Acc::ur() const {
 
 int zoneOf(float gap) { return gap < 100 ? 0 : gap < 130 ? 1 : gap < 260 ? 2 : 3; }
 
-std::vector<std::pair<size_t, size_t>> findStreams(const std::vector<float>& sp, const std::vector<float>& gap) {
+std::vector<std::pair<size_t, size_t>> findStreams(const std::vector<float>& sp, const std::vector<float>& gap, float maxGap) {
     std::vector<std::pair<size_t, size_t>> out;
     for (size_t i = 0; i + 1 < sp.size();) {
         float g0 = gap[i + 1];
         size_t j = i + 1;
-        if (g0 <= 200)
+        if (g0 <= maxGap)
             while (j < sp.size() && sp[j] <= 3 && std::fabs(gap[j] - g0) <= 0.15f * g0) j++;
         if (j - i >= 4) out.push_back({i, j}), i = j;
         else i++;
@@ -141,7 +141,7 @@ PlayStats analyze(const Replay& r, const Beatmap& b, float stars) {
     auto& v = s.objs;
     std::vector<float> sp(v.size()), gp(v.size());
     for (size_t k = 0; k < v.size(); k++) sp[k] = v[k].spacing, gp[k] = v[k].gap;
-    for (auto [i, j] : findStreams(sp, gp)) {
+    for (auto [i, j] : findStreams(sp, gp, streamMaxGap(s.bpm))) {
         StreamSeg sg{15000 / v[i + 1].gap, (int)(j - i), 0, 0, 0, 0, 0};
         Acc ea, la;
         for (size_t k = i; k < j; k++) {

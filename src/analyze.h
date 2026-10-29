@@ -1,4 +1,5 @@
 #pragma once
+#include <cmath>
 #include "parse.h"
 
 enum Cause : uint8_t { HIT, AIM, TAP, OFFTIME, NOPRESS };
@@ -34,6 +35,7 @@ struct PlayStats {
 };
 int zoneOf(float gapMs);
 // Stream segments [first, last) over per-object spacing (radii) and gap (ms, gap[i] = t[i] - t[i-1]):
-// >= 4 objects, spacing <= 3, every gap within 15% of the first one, first gap <= 200 ms.
-std::vector<std::pair<size_t, size_t>> findStreams(const std::vector<float>& spacing, const std::vector<float>& gap);
+// >= 4 objects, spacing <= 3, every gap within 15% of the first one, first gap <= maxGap (1/4 of the beat).
+std::vector<std::pair<size_t, size_t>> findStreams(const std::vector<float>& spacing, const std::vector<float>& gap, float maxGap);
+inline float streamMaxGap(float bpm) { return bpm > 0 ? std::fmin(200.f, 1.2f * 15000 / bpm) : 200.f; }
 PlayStats analyze(const Replay& r, const Beatmap& b, float stars);
