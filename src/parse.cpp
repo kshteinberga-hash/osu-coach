@@ -110,3 +110,188 @@ bool loadOsu(const std::wstring& path, Beatmap& out) {
     std::string s;
     return readFile(path, s) && parseOsu(s, out);
 }
+
+// ---- binary readers (.osr, osu!.db) ----
+#include <windows.h>
+extern "C" {
+#include "LzmaDec.h"
+}
+
+namespace {
+struct Reader {
+    const uint8_t *p, *e;
+    bool ok = true;
+    Reader(std::string_view s) : p((const uint8_t*)s.data()), e(p + s.size()) {}
+    bool need(size_t n) { if ((size_t)(e - p) < n) ok = false; return ok; }
+    template <class T> T get() { T v{}; if (need(sizeof v)) memcpy(&v, p, sizeof v), p += sizeof v; return v; }
+    void skip(size_t n) { if (need(n)) p += n; }
+    uint64_t uleb() { uint64_t r = 0; for (int s = 0; need(1) && s < 64; s += 7) { uint8_t c = *p++; r |= uint64_t(c & 0x7f) << s; if (!(c & 0x80)) break; } return r; }
+    std::string str() {
+        uint8_t m = get<uint8_t>();
+        if (m != 0x0b) return {};
+        size_t n = (size_t)uleb();
+        if (!need(n)) return {};
+        std::string s((const char*)p, n); p += n; return s;
+    }
+};
+void* lzAlloc(ISzAllocPtr, size_t n) { return malloc(n); }
+void lzFree(ISzAllocPtr, void* q) { free(q); }
+const ISzAlloc kAlloc = {lzAlloc, lzFree};
+}
+
+std::wstring widen(std::string_view s) {
+    std::wstring w(MultiByteToWideChar(CP_UTF8, 0, s.data(), (int)s.size(), nullptr, 0), 0);
+    MultiByteToWideChar(CP_UTF8, 0, s.data(), (int)s.size(), w.data(), (int)w.size());
+    return w;
+}
+
+static bool decodeFrames(const uint8_t* src, size_t n, std::vector<Frame>& out) {
+    if (n < 13) return false;
+    size_t cap = n * 10 + 4096;
+    std::string txt;
+    for (int tries = 0; tries < 6; tries++, cap *= 2) {
+        txt.resize(cap);
+        SizeT dl = cap, sl = n - 13;
+        ELzmaStatus st;
+        SRes r = LzmaDecode((Byte*)txt.data(), &dl, src + 13, &sl, src, 5, LZMA_FINISH_ANY, &st, &kAlloc);
+        if (r != SZ_OK && r != SZ_ERROR_INPUT_EOF) return false;
+        if (dl < cap || st == LZMA_STATUS_FINISHED_WITH_MARK) { txt.resize(dl); break; }
+    }
+    out.clear();
+    out.reserve(txt.size() / 16);
+    const char* q = txt.c_str();
+    int t = 0;
+    while (*q) {
+        char* end;
+        long w = strtol(q, &end, 10); if (*end != '|') break; q = end + 1;
+        float x = strtof(q, &end); if (*end != '|') break; q = end + 1;
+        float y = strtof(q, &end); if (*end != '|') break; q = end + 1;
+        long k = strtol(q, &end, 10); q = end;
+        while (*q && *q != ',') q++;
+        if (*q == ',') q++;
+        if (w == -12345) continue;
+        t += w;
+        out.push_back({t, x, y, (int)k});
+    }
+    return true;
+}
+
+bool parseOsr(std::string_view bytes, Replay& r, bool withFrames) {
+    Reader R(bytes);
+    r.mode = R.get<uint8_t>(); r.ver = R.get<int>();
+    r.md5 = R.str(); r.player = R.str(); R.str();
+    r.n300 = R.get<uint16_t>(); r.n100 = R.get<uint16_t>(); r.n50 = R.get<uint16_t>();
+    r.geki = R.get<uint16_t>(); r.katu = R.get<uint16_t>(); r.miss = R.get<uint16_t>();
+    r.score = R.get<int>(); r.combo = R.get<uint16_t>(); R.get<uint8_t>(); r.mods = R.get<int>();
+    R.str();
+    r.when = (R.get<int64_t>() - 621355968000000000LL) / 10000;
+    int len = R.get<int>();
+    if (!R.ok) return false;
+    r.frames.clear();
+    if (!withFrames) return true;
+    return len > 0 && R.need(len) && decodeFrames(R.p, len, r.frames);
+}
+
+bool readOsr(const std::wstring& path, Replay& r, bool withFrames) {
+    std::string s;
+    if (withFrames) return readFile(path, s) && parseOsr(s, r, true);
+    FILE* f = _wfopen(path.c_str(), L"rb");  // header only: the first 1 KB is plenty
+    if (!f) return false;
+    s.resize(1024);
+    s.resize(fread(s.data(), 1, s.size(), f));
+    fclose(f);
+    return parseOsr(s, r, false);
+}
+
+float starsFor(const DbMap& m, int mods) {
+    int key = mods & (2 | 16 | 64 | 256);
+    float nm = -1;
+    for (auto& [k, v] : m.stars) { if (k == key) return v; if (k == 0) nm = v; }
+    return nm;
+}
+
+bool readOsuDb(const std::wstring& dir, std::vector<DbMap>& out) {
+    std::string s;
+    if (!readFile(dir + L"\\osu!.db", s)) return false;
+    Reader R(s);
+    int ver = R.get<int>();
+    R.get<int>(); R.get<uint8_t>(); R.get<int64_t>(); R.str();
+    int n = R.get<int>();
+    if (ver < 20191106 || n < 0) return false;
+    out.clear();
+    out.reserve(n);
+    for (int i = 0; i < n && R.ok; i++) {
+        DbMap m{};
+        std::string artist = R.str(); R.str();
+        std::string title = R.str(); R.str(); R.str();
+        std::string diff = R.str(); R.str();
+        m.md5 = R.str();
+        std::string file = R.str();
+        m.status = R.get<uint8_t>();
+        m.nCircle = R.get<uint16_t>(); m.nSlider = R.get<uint16_t>(); m.nSpinner = R.get<uint16_t>();
+        R.get<int64_t>();
+        m.ar = R.get<float>(); m.cs = R.get<float>(); m.hp = R.get<float>(); m.od = R.get<float>();
+        R.get<double>();
+        for (int list = 0; list < 4; list++) {
+            int k = R.get<int>();
+            for (int j = 0; j < k && R.ok; j++) {
+                R.get<uint8_t>(); int mods = R.get<int>(); R.get<uint8_t>();
+                float v = ver >= 20250107 ? R.get<float>() : (float)R.get<double>();
+                if (list == 0) m.stars.push_back({mods, v});
+            }
+        }
+        m.drainS = R.get<int>(); R.get<int>(); R.get<int>();
+        R.skip((size_t)R.get<int>() * 17);
+        m.bid = R.get<int>(); m.sid = R.get<int>(); R.get<int>();
+        R.skip(4); R.get<uint16_t>(); R.get<float>();
+        uint8_t mode = R.get<uint8_t>();
+        R.str(); R.str(); R.get<uint16_t>(); R.str(); R.get<uint8_t>(); R.get<int64_t>(); R.get<uint8_t>();
+        std::string folder = R.str();
+        R.get<int64_t>(); R.skip(5); R.get<int>(); R.get<uint8_t>();
+        if (!R.ok) break;
+        if (mode != 0 || m.md5.empty()) continue;
+        m.title = artist + " - " + title + " [" + diff + "]";
+        m.path = dir + L"\\Songs\\" + widen(folder) + L"\\" + widen(file);
+        out.push_back(std::move(m));
+    }
+    return R.ok;
+}
+
+std::wstring exeDir() {
+    wchar_t b[MAX_PATH];
+    DWORD n = GetModuleFileNameW(nullptr, b, MAX_PATH);
+    std::wstring s(b, n);
+    return s.substr(0, s.find_last_of(L'\\'));
+}
+
+static bool hasDb(const std::wstring& d) { return !d.empty() && GetFileAttributesW((d + L"\\osu!.db").c_str()) != INVALID_FILE_ATTRIBUTES; }
+
+static std::wstring regDir(const wchar_t* key) {
+    wchar_t b[1024];
+    DWORD n = sizeof b;
+    if (RegGetValueW(HKEY_CLASSES_ROOT, key, nullptr, RRF_RT_REG_SZ, nullptr, b, &n) != ERROR_SUCCESS) return {};
+    std::wstring s = b;  // "C:\...\osu!.exe" "%1"
+    size_t a = s.find(L'"'), z = s.find(L'"', a + 1);
+    if (a == std::wstring::npos || z == std::wstring::npos) return {};
+    s = s.substr(a + 1, z - a - 1);
+    return s.substr(0, s.find_last_of(L'\\'));
+}
+
+std::wstring findOsuDir() {
+    std::string ini;
+    if (readFile(exeDir() + L"\\osu-coach.ini", ini)) {
+        std::wstring d = widen(trim(ini));
+        if (hasDb(d)) return d;
+    }
+    for (auto k : {L"osustable.File.osz\\shell\\open\\command", L"osu\\shell\\open\\command"})
+        if (auto d = regDir(k); hasDb(d)) return d;
+    wchar_t b[MAX_PATH];
+    if (GetEnvironmentVariableW(L"LOCALAPPDATA", b, MAX_PATH) && hasDb(std::wstring(b) + L"\\osu!")) return std::wstring(b) + L"\\osu!";
+    return {};
+}
+
+void saveOsuDir(const std::wstring& dir) {
+    std::string u(WideCharToMultiByte(CP_UTF8, 0, dir.c_str(), (int)dir.size(), nullptr, 0, nullptr, nullptr), 0);
+    WideCharToMultiByte(CP_UTF8, 0, dir.c_str(), (int)dir.size(), u.data(), (int)u.size(), nullptr, nullptr);
+    if (FILE* f = _wfopen((exeDir() + L"\\osu-coach.ini").c_str(), L"wb")) fwrite(u.data(), 1, u.size(), f), fclose(f);
+}
