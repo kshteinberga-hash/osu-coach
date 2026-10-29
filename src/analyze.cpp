@@ -51,7 +51,7 @@ PlayStats analyze(const Replay& r, const Beatmap& b, float stars) {
         if (o.kind == 2) continue;
         if (o.t > lastT + 1000) break;
         ObjRes e{};
-        e.t = (int)(o.t / rate);
+        e.t = (int)(o.t / rate), e.slider = o.kind == 1;
         int hitIdx = -1;
         bool early = false;
         while (pi < ps.size() && ps[pi].t < o.t - 400) pi++;
@@ -100,7 +100,7 @@ PlayStats analyze(const Replay& r, const Beatmap& b, float stars) {
     const ObjRes* pr = nullptr;
     for (auto& e : s.objs) {
         bool hit = e.judge > 0, miss = !hit;
-        s.nobj++, s.sMiss += miss;
+        s.nobj++, s.sMiss += miss, s.sMissCircle += miss && !e.slider;
         s.bObj[e.bucket]++, s.bMiss[e.bucket] += miss;
         s.qObj[e.quad]++, s.qMiss[e.quad] += miss;
         if (pr) s.jumpHist[std::min(23, (int)(e.spacing * 2))]++;

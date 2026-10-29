@@ -1,5 +1,5 @@
 #include "t.h"
-#include "../src/parse.h"
+#include "../src/scan.h"
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -95,7 +95,25 @@ static void test_unicode_path() {
     std::filesystem::remove_all(dir);
 }
 
+static void test_deleted_map() {
+    auto dir = std::filesystem::temp_directory_path() / L"osu-coach-scan";
+    std::filesystem::create_directories(dir / L"Data" / L"r");
+    std::string db;
+    put<int>(db, 20260924); put<int>(db, 0); put<uint8_t>(db, 1); put<int64_t>(db, 0); uleb(db, "x"); put<int>(db, 0); put<int>(db, 0);
+    { std::ofstream f(dir / L"osu!.db", std::ios::binary); f << db; }
+    std::string b;
+    put<uint8_t>(b, 0); put<int>(b, 20240101); uleb(b, "0123456789abcdef0123456789abcdef"); uleb(b, "p"); uleb(b, "");
+    for (int i = 0; i < 6; i++) put<uint16_t>(b, 0);
+    put<int>(b, 0); put<uint16_t>(b, 0); put<uint8_t>(b, 0); put<int>(b, 0); uleb(b, ""); put<int64_t>(b, 0); put<int>(b, 0);
+    { std::ofstream f(dir / L"Data" / L"r" / L"a.osr", std::ios::binary); f << b; }
+    ScanResult r = scan(dir.wstring());
+    CHECK(r.dbOk && r.db.empty());
+    CHECK(r.deleted == 1 && r.plays.empty());
+    std::filesystem::remove_all(dir);
+}
+
 int main() {
+    test_deleted_map();
     test_osu_basic();
     test_osu_degenerate();
     test_osu_ar_default();

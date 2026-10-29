@@ -9,7 +9,7 @@ struct ObjRes {
     int t; float err, dist, spacing, gap, hold;
     uint16_t judge; uint8_t key, cause, bucket, quad;  // key 0 = K1/M1, 1 = K2/M2; quad 0 TL, 1 TR, 2 BL, 3 BR
     int8_t along;                             // aim misses: -1 undershoot, 0 side, +1 overshoot
-    bool afterBreak, inStream, tired;         // tired = second half of a run of 20+ notes
+    bool afterBreak, inStream, tired, slider; // tired = second half of a run of 20+ notes
 };
 struct StreamSeg { float bpm; int n, miss, alt, dbl; float errEarly, errLate; };
 struct Acc {
@@ -21,7 +21,8 @@ struct Acc {
 };
 struct PlayStats {
     std::wstring file; std::string md5, title; int bid; int64_t when; int mods; float stars, ar, od, bpm, rate;
-    uint16_t g300, g100, g50, gmiss, combo; int nobj, sMiss; float acc;  // g* = game counts, sMiss = simulated
+    uint16_t g300, g100, g50, gmiss, combo; float acc;  // g* = game counts
+    int nobj, sMiss, sMissCircle;  // simulated: all misses incl. slider heads / circles only (comparable to the game's count)
     Acc err, errKey[2], zone[4]; int within[3];                           // within +-15/30/50 ms
     int hist[100];                                                       // 2 ms bins, -100..+100
     int bObj[4], bMiss[4]; double bDist[4];
