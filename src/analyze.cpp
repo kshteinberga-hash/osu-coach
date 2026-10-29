@@ -76,7 +76,7 @@ PlayStats analyze(const Replay& r, const Beatmap& b, float stars) {
             e.err = (p.t - o.t) / rate, e.key = p.key, e.hold = p.rel >= 0 ? (p.rel - p.t) / rate : -1;
             e.dist = std::hypot(p.x - o.x, p.y - o.y) / rad;
         } else {
-            e.cause = early ? TIMING : near < 0 ? NOPRESS : std::hypot(ps[near].x - o.x, ps[near].y - o.y) > rad ? AIM : TAP;
+            e.cause = early ? OFFTIME : near < 0 ? NOPRESS : std::hypot(ps[near].x - o.x, ps[near].y - o.y) > rad ? AIM : TAP;
             const Press* p = early ? &ps[hitIdx] : near >= 0 ? &ps[near] : nullptr;
             if (p) e.dist = std::hypot(p->x - o.x, p->y - o.y) / rad, e.err = (p->t - o.t) / rate, e.key = p->key;
             if (e.cause == AIM && po) {

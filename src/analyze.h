@@ -1,7 +1,7 @@
 #pragma once
 #include "parse.h"
 
-enum Cause : uint8_t { HIT, AIM, TAP, TIMING, NOPRESS };
+enum Cause : uint8_t { HIT, AIM, TAP, OFFTIME, NOPRESS };
 enum Bucket : uint8_t { DENSE, STREAM, JUMP, BIG };
 
 // One circle or slider head. Times in real ms (mods applied), distances in circle radii.

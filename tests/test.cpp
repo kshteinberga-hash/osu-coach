@@ -121,6 +121,7 @@ int main() {
     test_real_files();
     test_unicode_path();
     void analyzeTests(); analyzeTests();
+    void coachTests(); coachTests();
     std::printf("%d checks, %d failures\n", t_run, t_fail);
     return t_fail != 0;
 }

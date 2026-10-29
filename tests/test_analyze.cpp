@@ -43,7 +43,7 @@ static void test_timing() {
     auto s = analyze(rep({{1000, 100, 100}, {1650, 300, 100}, {2000, 300, 300}}), map3(), 4);
     CHECK(s.objs[1].judge == 50);
     s = analyze(rep({{1000, 100, 100}, {1340, 300, 100}, {2000, 300, 300}}), map3(), 4);
-    CHECK(s.objs[1].judge == 0 && s.objs[1].cause == TIMING);
+    CHECK(s.objs[1].judge == 0 && s.objs[1].cause == OFFTIME);
 }
 
 static void test_tap() {

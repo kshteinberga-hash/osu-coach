@@ -1,1 +1,29 @@
 #pragma once
+#include "analyze.h"
+
+enum Skill { TIMING, JUMPS, BIGJUMPS, STREAMS, SPEED, READING, STAMINA, NSKILL };
+extern const char* const kSkillName[NSKILL];
+
+// Daily totals per 0.25-star bin (bin = floor(stars * 4), -1 = unknown). Survives deleted maps.
+struct Day {
+    int date, bin, plays, objs, miss[NSKILL], obj[NSKILL];
+    double es, ess, en;  // hit errors: sum, sum of squares, count
+    int fcs; double accSum;
+};
+struct Weakness { Skill s; double pp; std::string metric, fix; };
+struct Report {
+    float radar[NSKILL]; float actual[NSKILL], expected[NSKILL];  // miss rates (timing: UR)
+    bool needHistory;
+    Weakness top[3]; int nTop;
+    float tier; std::string verdict;
+    int trend[3];  // UR, jump miss rate, stream miss rate: +1 improving, 0 flat, -1 regressing
+    std::vector<Day> days;
+    size_t recentFrom;  // index of the first recent play
+};
+
+bool inSkill(const ObjRes& o, Skill s);
+int ymd(int64_t unixMs);  // local date as yyyymmdd
+double ppEstimate(float stars, float od, int nobj, float acc, int misses);
+Report coach(const std::vector<PlayStats>& plays, std::vector<Day>& history, int64_t nowMs);
+bool loadHistory(const std::wstring& path, std::vector<Day>& out);  // corrupt -> renamed to .bak, empty
+void saveHistory(const std::wstring& path, const std::vector<Day>& days);
