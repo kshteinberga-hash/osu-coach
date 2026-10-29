@@ -65,6 +65,21 @@ static void test_osr_header() {
     CHECK(!parseOsr(std::string_view(b).substr(0, 20), r, false));
 }
 
+static void test_osr_long_lifebar() {
+    std::string b;
+    put<uint8_t>(b, 0); put<int>(b, 20240101); uleb(b, "0123456789abcdef0123456789abcdef"); uleb(b, "p"); uleb(b, "");
+    for (int i = 0; i < 6; i++) put<uint16_t>(b, 1);
+    put<int>(b, 0); put<uint16_t>(b, 0); put<uint8_t>(b, 0); put<int>(b, 64);
+    uleb(b, std::string(5000, '1'));  // life bar graph longer than the 1 KB header read
+    put<int64_t>(b, 1793318400000LL * 10000 + 621355968000000000LL); put<int>(b, 0);
+    auto p = std::filesystem::temp_directory_path() / L"osu-coach-long.osr";
+    { std::ofstream f(p, std::ios::binary); f << b; }
+    Replay r;
+    CHECK(readOsr(p.wstring(), r, false));
+    CHECK(r.mods == 64 && r.when == 1793318400000LL);
+    std::filesystem::remove(p);
+}
+
 static void test_real_files() {
     const char* d = std::getenv("OSU_DIR");
     if (!d) { std::printf("  (OSU_DIR not set, skipping real-file test)\n"); return; }
@@ -118,6 +133,7 @@ int main() {
     test_osu_degenerate();
     test_osu_ar_default();
     test_osr_header();
+    test_osr_long_lifebar();
     test_real_files();
     test_unicode_path();
     void analyzeTests(); analyzeTests();

@@ -195,12 +195,12 @@ bool parseOsr(std::string_view bytes, Replay& r, bool withFrames) {
 bool readOsr(const std::wstring& path, Replay& r, bool withFrames) {
     std::string s;
     if (withFrames) return readFile(path, s) && parseOsr(s, r, true);
-    FILE* f = _wfopen(path.c_str(), L"rb");  // header only: the first 1 KB is plenty
+    FILE* f = _wfopen(path.c_str(), L"rb");  // header only: 1 KB is usually enough, unless the life bar string is long
     if (!f) return false;
     s.resize(1024);
     s.resize(fread(s.data(), 1, s.size(), f));
     fclose(f);
-    return parseOsr(s, r, false);
+    return parseOsr(s, r, false) || (s.size() == 1024 && readFile(path, s) && parseOsr(s, r, false));
 }
 
 float starsFor(const DbMap& m, int mods) {

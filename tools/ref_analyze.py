@@ -1,7 +1,7 @@
 """Parse osu! stable replays + beatmaps, simulate hits, dump per-object stats as JSON lines."""
 import sys, os, struct, lzma, hashlib, json, math, glob, datetime
 
-OSU = r"E:\Pirate\Igruhi\oshuska\osu!"
+OSU = os.environ.get("OSU_DIR", os.path.expandvars(r"%LOCALAPPDATA%\osu!"))
 OUT = sys.argv[1] if len(sys.argv) > 1 else None
 
 def rd_uleb(b, i):
