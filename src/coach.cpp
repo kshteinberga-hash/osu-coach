@@ -2,7 +2,11 @@
 #include <algorithm>
 #include <cmath>
 #include <ctime>
+#include <atomic>
 #include <map>
+#include <mutex>
+#include <thread>
+#include <unordered_map>
 #include <windows.h>
 
 const char* const kSkillName[NSKILL] = {"Timing", "Jumps", "Big jumps", "Streams", "Speed", "Reading", "Stamina"};
@@ -247,7 +251,85 @@ Report coach(const std::vector<PlayStats>& plays, std::vector<Day>& hist, int64_
     return r;
 }
 
-static const char* kOut = "{\"d\":%d,\"b\":%d,\"p\":%d,\"o\":%d,\"m\":[%d,%d,%d,%d,%d,%d,%d],\"ob\":[%d,%d,%d,%d,%d,%d,%d],\"es\":%.17g,\"ess\":%.17g,\"en\":%.17g,\"fc\":%d,\"as\":%.17g}";
+MapFeat features(const Beatmap& b) {
+    MapFeat f{0, 0, 0, 0, b.ar, b.od, b.bpm, 0};
+    float rad = 54.4f - 4.48f * b.cs;
+    std::vector<float> sp, gap;
+    const HitObj* p = nullptr;
+    int n = 0, jumps = 0, rhythm = 0, sliders = 0;
+    for (auto& o : b.objs) {
+        if (o.kind == 2) continue;
+        sp.push_back(p ? std::hypot(o.x - p->x, o.y - p->y) / rad : 0);
+        gap.push_back(p ? (float)(o.t - p->t) : 1e9f);
+        if (p) {
+            n++, jumps += sp.back() >= 4;
+            if (gap.size() > 2 && gap[gap.size() - 2] < 1e8f && std::fabs(gap.back() / gap[gap.size() - 2] - 1) > 0.25f) rhythm++;
+        }
+        sliders += o.kind == 1;
+        p = &o;
+    }
+    if (sp.empty()) return f;
+    int inStream = 0;
+    for (auto [i, j] : findStreams(sp, gap)) inStream += (int)(j - i), f.longRun = std::max(f.longRun, (int)(j - i));
+    f.jump = n ? (float)jumps / n : 0, f.rhythm = n ? (float)rhythm / n : 0;
+    f.stream = (float)inStream / sp.size(), f.slider = (float)sliders / sp.size();
+    return f;
+}
+
+static std::mutex gFeatMu;
+static std::unordered_map<std::string, MapFeat> gFeat;
+void cacheFeatures(const std::string& md5, const MapFeat& f) { std::lock_guard g(gFeatMu); gFeat[md5] = f; }
+
+std::vector<Suggestion> suggest(const std::vector<DbMap>& db, const std::vector<PlayStats>& plays, Skill weak,
+                                float lo, float hi, float streamBpm, int64_t now) {
+    std::vector<const DbMap*> cand, todo;
+    for (auto& m : db)
+        if (float s = starsFor(m, 0); s >= lo && s <= hi) cand.push_back(&m);
+    {
+        std::lock_guard g(gFeatMu);
+        for (auto m : cand) if (!gFeat.count(m->md5)) todo.push_back(m);
+    }
+    std::atomic<size_t> next = 0;
+    auto work = [&] {
+        Beatmap b;
+        for (size_t i; (i = next++) < todo.size();)
+            cacheFeatures(todo[i]->md5, loadOsu(todo[i]->path, b) ? features(b) : MapFeat{});
+    };
+    std::vector<std::thread> pool(std::max(1u, std::thread::hardware_concurrency()));
+    for (auto& t : pool) t = std::thread(work);
+    for (auto& t : pool) t.join();
+
+    std::unordered_map<std::string, int> recent;
+    for (auto& p : plays) if (p.when >= now - 30 * DAY_MS) recent[p.md5]++;
+    std::vector<Suggestion> out;
+    std::lock_guard g(gFeatMu);
+    for (auto m : cand) {
+        const MapFeat& f = gFeat[m->md5];
+        float sc, stars = starsFor(*m, 0);
+        std::string why;
+        switch (weak) {
+            case JUMPS: case BIGJUMPS:
+                sc = f.jump + (f.ar >= 9 ? 0.1f : 0), why = fmt("%.0f%% jumps, AR %.1f", 100 * f.jump, f.ar); break;
+            case STREAMS: case SPEED: {
+                float target = streamBpm > 0 ? streamBpm * 1.05f : f.bpm;
+                sc = f.stream * std::exp(-std::fabs(f.bpm - target) / 20), why = fmt("%.0f%% stream notes at %.0f BPM", 100 * f.stream, f.bpm);
+                break;
+            }
+            case READING: sc = f.rhythm + (f.ar >= 8.5f ? 0.3f : 0), why = fmt("%.0f%% rhythm changes, AR %.1f", 100 * f.rhythm, f.ar); break;
+            case STAMINA: sc = f.stream * std::min(1.f, f.longRun / 50.f), why = fmt("longest stream %d notes", f.longRun); break;
+            default: sc = std::min(1.f, f.od / 8) * (1 - f.slider), why = fmt("OD %.1f, %.0f%% circles", f.od, 100 * (1 - f.slider)); break;
+        }
+        int n = recent.count(m->md5) ? recent[m->md5] : 0;
+        sc *= n <= 3 ? 1.2f : n > 10 ? 0.5f : 1.f;
+        why += fmt(", %.2f\xE2\x98\x85, played %d times in 30 days", stars, n);
+        if (sc > 0) out.push_back({m, stars, sc, why});
+    }
+    std::sort(out.begin(), out.end(), [](auto& a, auto& b) { return a.score > b.score; });
+    if (out.size() > 5) out.resize(5);
+    return out;
+}
+
+static const char* kOut ="{\"d\":%d,\"b\":%d,\"p\":%d,\"o\":%d,\"m\":[%d,%d,%d,%d,%d,%d,%d],\"ob\":[%d,%d,%d,%d,%d,%d,%d],\"es\":%.17g,\"ess\":%.17g,\"en\":%.17g,\"fc\":%d,\"as\":%.17g}";
 static const char* kIn = "{\"d\":%d,\"b\":%d,\"p\":%d,\"o\":%d,\"m\":[%d,%d,%d,%d,%d,%d,%d],\"ob\":[%d,%d,%d,%d,%d,%d,%d],\"es\":%lf,\"ess\":%lf,\"en\":%lf,\"fc\":%d,\"as\":%lf}";
 
 void saveHistory(const std::wstring& path, const std::vector<Day>& days) {

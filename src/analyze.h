@@ -33,4 +33,7 @@ struct PlayStats {
     std::vector<ObjRes> objs;
 };
 int zoneOf(float gapMs);
+// Stream segments [first, last) over per-object spacing (radii) and gap (ms, gap[i] = t[i] - t[i-1]):
+// >= 4 objects, spacing <= 3, every gap within 15% of the first one, first gap <= 200 ms.
+std::vector<std::pair<size_t, size_t>> findStreams(const std::vector<float>& spacing, const std::vector<float>& gap);
 PlayStats analyze(const Replay& r, const Beatmap& b, float stars);

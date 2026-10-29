@@ -10,6 +10,19 @@ double Acc::ur() const {
 
 int zoneOf(float gap) { return gap < 100 ? 0 : gap < 130 ? 1 : gap < 260 ? 2 : 3; }
 
+std::vector<std::pair<size_t, size_t>> findStreams(const std::vector<float>& sp, const std::vector<float>& gap) {
+    std::vector<std::pair<size_t, size_t>> out;
+    for (size_t i = 0; i + 1 < sp.size();) {
+        float g0 = gap[i + 1];
+        size_t j = i + 1;
+        if (g0 <= 200)
+            while (j < sp.size() && sp[j] <= 3 && std::fabs(gap[j] - g0) <= 0.15f * g0) j++;
+        if (j - i >= 4) out.push_back({i, j}), i = j;
+        else i++;
+    }
+    return out;
+}
+
 namespace {
 struct Press { int t; float x, y; uint8_t key; int rel; };
 }
@@ -125,26 +138,20 @@ PlayStats analyze(const Replay& r, const Beatmap& b, float stars) {
         pr = &e;
     }
 
-    // streams: >= 4 objects, spacing <= 3r, even gaps (within 15% of the first), 1/4 at >= 75 bpm
     auto& v = s.objs;
-    for (size_t i = 0; i + 1 < v.size();) {
-        float g0 = v[i + 1].gap;
-        size_t j = i + 1;
-        if (g0 <= 200)
-            while (j < v.size() && v[j].spacing <= 3 && std::fabs(v[j].gap - g0) <= 0.15f * g0) j++;
-        if (j - i >= 4) {
-            StreamSeg sg{15000 / g0, (int)(j - i), 0, 0, 0, 0, 0};
-            Acc ea, la;
-            for (size_t k = i; k < j; k++) {
-                v[k].inStream = true;
-                sg.miss += v[k].judge == 0;
-                if (v[k].judge) (k - i < 4 ? ea : la).add(v[k].err);
-                if (k > i && v[k].judge && v[k - 1].judge) (v[k].key != v[k - 1].key ? sg.alt : sg.dbl)++;
-            }
-            sg.errEarly = (float)ea.mean(), sg.errLate = (float)la.mean();
-            s.streams.push_back(sg);
-            i = j;
-        } else i++;
+    std::vector<float> sp(v.size()), gp(v.size());
+    for (size_t k = 0; k < v.size(); k++) sp[k] = v[k].spacing, gp[k] = v[k].gap;
+    for (auto [i, j] : findStreams(sp, gp)) {
+        StreamSeg sg{15000 / v[i + 1].gap, (int)(j - i), 0, 0, 0, 0, 0};
+        Acc ea, la;
+        for (size_t k = i; k < j; k++) {
+            v[k].inStream = true;
+            sg.miss += v[k].judge == 0;
+            if (v[k].judge) (k - i < 4 ? ea : la).add(v[k].err);
+            if (k > i && v[k].judge && v[k - 1].judge) (v[k].key != v[k - 1].key ? sg.alt : sg.dbl)++;
+        }
+        sg.errEarly = (float)ea.mean(), sg.errLate = (float)la.mean();
+        s.streams.push_back(sg);
     }
 
     // stamina: longest run with no gap over 500 ms; second half of 20+ runs is "tired"

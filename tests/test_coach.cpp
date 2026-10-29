@@ -99,7 +99,37 @@ static void test_verdict() {
     CHECK(r.verdict == "Ready to push to 4.5\xE2\x98\x85");
 }
 
+static void test_features() {
+    Beatmap b{9, 4, 8, 5, 200, 0, "t", {}};
+    float r = 54.4f - 4.48f * 4;
+    for (int i = 0; i < 10; i++) b.objs.push_back({50.f + 6 * r * (i % 2), 192, 1000 + 300 * i, 1000 + 300 * i, 0, false});
+    MapFeat f = features(b);
+    NEAR(f.jump, 1, 0.01);
+    CHECK(f.stream == 0);
+    b.objs.clear();
+    for (int i = 0; i < 12; i++) b.objs.push_back({50.f + 1.5f * r * i, 192, 1000 + 100 * i, 1000 + 100 * i, 0, false});
+    f = features(b);
+    NEAR(f.stream, 1, 0.01);
+    CHECK(f.longRun == 12);
+    NEAR(f.jump, 0, 0.01);
+}
+
+static void test_suggest() {
+    std::vector<DbMap> db(3);
+    const char* md5[] = {"m-a", "m-b", "m-c"};
+    float stars[] = {4.0f, 4.2f, 5.0f}, jump[] = {0.2f, 0.8f, 0.9f};
+    for (int i = 0; i < 3; i++) {
+        db[i].md5 = md5[i], db[i].stars = {{0, stars[i]}}, db[i].title = md5[i];
+        cacheFeatures(md5[i], MapFeat{jump[i], 0, 0, 0, 9, 8, 180, 0});
+    }
+    auto s = suggest(db, {}, JUMPS, 3.5f, 4.5f, 0, NOW);
+    CHECK(s.size() == 2);
+    if (s.size() == 2) CHECK(s[0].map == &db[1] && s[1].map == &db[0] && !s[0].why.empty());
+}
+
 void coachTests() {
+    test_features();
+    test_suggest();
     test_pp();
     test_radar_neutral();
     test_radar_half();
