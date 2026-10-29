@@ -1,0 +1,11 @@
+.superpowers/
+*.obj
+*.exe
+*.pdb
+*.lib
+*.exp
+*.jsonl
+history.json*
+osu-coach.ini
+build/
+__pycache__/
