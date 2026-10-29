@@ -102,6 +102,7 @@ int main() {
     test_osr_header();
     test_real_files();
     test_unicode_path();
+    void analyzeTests(); analyzeTests();
     std::printf("%d checks, %d failures\n", t_run, t_fail);
     return t_fail != 0;
 }

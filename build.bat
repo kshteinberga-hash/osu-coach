@@ -8,7 +8,7 @@ set SRC=src\parse.cpp src\analyze.cpp src\coach.cpp src\scan.cpp build\lzma.obj
 set LIBS=user32.lib shell32.lib ole32.lib advapi32.lib
 if not exist build\lzma.obj cl /nologo /O2 /MT /c third_party\lzma\LzmaDec.c /Fobuild\lzma.obj >nul || exit /b 1
 if "%1"=="test" (
-  cl %F% tests\test.cpp %SRC% /Fetests\test.exe /link %LIBS% >build\test-build.log || (type build\test-build.log & exit /b 1)
+  cl %F% tests\*.cpp %SRC% /Fetests\test.exe /link %LIBS% >build\test-build.log || (type build\test-build.log & exit /b 1)
   tests\test.exe
   exit /b %errorlevel%
 )
