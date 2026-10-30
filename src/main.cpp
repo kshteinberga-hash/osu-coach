@@ -198,8 +198,30 @@ static void renderFrame(App& app, const std::wstring& shotPath = L"") {
     gSwap->Present(1, 0);
 }
 
+static bool gFull;
+static WINDOWPLACEMENT gWindowed{sizeof(WINDOWPLACEMENT)};  // where the window was before borderless
+
+static void setFullscreen(HWND h, bool on) {  // borderless over the whole monitor; F11 toggles back
+    if (on == gFull) return;
+    DWORD vis = IsWindowVisible(h) ? WS_VISIBLE : 0;
+    if (on) {
+        GetWindowPlacement(h, &gWindowed);
+        MONITORINFO mi{sizeof mi};
+        GetMonitorInfoW(MonitorFromWindow(h, MONITOR_DEFAULTTONEAREST), &mi);
+        SetWindowLongPtrW(h, GWL_STYLE, WS_POPUP | vis);
+        SetWindowPos(h, HWND_TOP, mi.rcMonitor.left, mi.rcMonitor.top, mi.rcMonitor.right - mi.rcMonitor.left,
+                     mi.rcMonitor.bottom - mi.rcMonitor.top, SWP_FRAMECHANGED | SWP_NOOWNERZORDER);
+    } else {
+        SetWindowLongPtrW(h, GWL_STYLE, WS_OVERLAPPEDWINDOW | vis);
+        SetWindowPlacement(h, &gWindowed);
+        SetWindowPos(h, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+    }
+    gFull = on;
+}
+
 static LRESULT WINAPI wndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
     if (ImGui_ImplWin32_WndProcHandler(h, m, w, l)) return true;
+    if (m == WM_KEYDOWN && w == VK_F11 && !(l & (1 << 30))) { setFullscreen(h, !gFull); return 0; }
     if (m == WM_SIZE && w != SIZE_MINIMIZED) {
         gResizeW = LOWORD(l), gResizeH = HIWORD(l);
         if (gSizing && gRedraw) gRedraw();  // the main loop is blocked in the system's sizing loop: draw from here
@@ -286,7 +308,8 @@ int wmain(int argc, wchar_t** argv) {
     HWND hwnd = CreateWindowW(L"osu-coach", L"osu-coach", WS_OVERLAPPEDWINDOW, 100, 100, (int)(1280 * dpi), (int)(820 * dpi), nullptr, nullptr, wc.hInstance, nullptr);
     if (!hwnd) { MessageBoxW(nullptr, L"Could not create the window.", L"osu-coach", MB_ICONERROR); return 1; }
     if (!createDevice(hwnd)) { MessageBoxW(nullptr, L"Direct3D 11 is not available.", L"osu-coach", MB_ICONERROR); return 1; }
-    ShowWindow(hwnd, shotDir.empty() ? SW_SHOWDEFAULT : SW_HIDE);
+    if (shotDir.empty()) setFullscreen(hwnd, true);  // starts borderless; F11 gives the window back
+    ShowWindow(hwnd, shotDir.empty() ? SW_SHOW : SW_HIDE);
     UpdateWindow(hwnd);
 
     ImGui::CreateContext();
