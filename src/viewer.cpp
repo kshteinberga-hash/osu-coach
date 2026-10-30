@@ -287,7 +287,7 @@ void drawViewer(App& a) {
     float upper = std::max(S(260), ImGui::GetContentRegionAvail().y - transportH - S(16) - S(6));
 
     float availX = ImGui::GetContentRegionAvail().x, coachW = std::clamp(std::floor(availX * 0.32f), S(320), S(440));
-    window("field", "Replay", cYellow, availX - coachW - S(16) - S(6), upper, false, clockStr(v.clock.t) + " / " + clockStr(v.endT));
+    window("field", "Replay", cWell, availX - coachW - S(16) - S(6), upper, false, clockStr(v.clock.t) + " / " + clockStr(v.endT));
     {
         ImVec2 p = ImGui::GetCursorScreenPos(), sz = ImGui::GetContentRegionAvail();
         ImGui::GetWindowDrawList()->AddRectFilled(p, {p.x + sz.x, p.y + sz.y}, cScreen);
@@ -295,7 +295,7 @@ void drawViewer(App& a) {
     }
     endWindow();
     ImGui::SameLine(0, S(16));
-    window("coach", "Coach", cPink, 0, upper);
+    window("coach", "Coach", cOrange, 0, upper);
     {
         int keys = 0;
         v.cursorAt(v.clock.t, &keys);
@@ -306,17 +306,17 @@ void drawViewer(App& a) {
             ImGui::Dummy({S(44), S(44)});
             ImDrawList* dl = ImGui::GetWindowDrawList();
             float d = held ? S(3) : 0;
-            if (!held) dl->AddRectFilled({p.x + S(3), p.y + S(3)}, {p.x + S(47), p.y + S(47)}, cInk);
+            if (!held) dl->AddRectFilled({p.x + S(3), p.y + S(3)}, {p.x + S(47), p.y + S(47)}, cInk, S(4));
             ImVec2 q{p.x + d, p.y + d};
-            dl->AddRectFilled(q, {q.x + S(44), q.y + S(44)}, held ? (k ? cPink : cYellow) : cWin);
-            dl->AddRect(q, {q.x + S(44), q.y + S(44)}, cInk, 0, 0, S(2));
+            dl->AddRectFilled(q, {q.x + S(44), q.y + S(44)}, held ? (k ? cOrange : cYellow) : cWin, S(4));
+            dl->AddRect({q.x + S(1), q.y + S(1)}, {q.x + S(43), q.y + S(43)}, cInk, S(4), 0, S(2));
             const char* l = k ? "K2" : "K1";
             ImVec2 ts = font(LABEL)->CalcTextSizeA(font(LABEL)->FontSize, FLT_MAX, 0, l);
             dl->AddText(font(LABEL), font(LABEL)->FontSize, {q.x + (S(44) - ts.x) / 2, q.y + (S(44) - ts.y) / 2}, cInk, l);
         }
         ImGui::SameLine(0, S(16));
         ImGui::AlignTextToFramePadding();
-        txt(MONO, cInk, clockStr(v.clock.t));
+        txt(BODY, cInk, clockStr(v.clock.t));
         if (!v.audioNote.empty()) txt(LABEL, cMuted, v.audioNote, true);
         ImGui::Dummy({0, S(4)});
         rule();
@@ -324,7 +324,7 @@ void drawViewer(App& a) {
         float beat = v.play.bpm > 0 ? 60000 / v.play.bpm : 500;
         if (v.stoppedAt >= 0) {
             Explain e = explainMiss(v.objs[v.stoppedAt], beat);
-            txt(MONO, cMuted, clockStr(v.mapT(v.stoppedAt)));
+            txt(LABEL, cMuted, clockStr(v.mapT(v.stoppedAt)));
             txt(TITLE, v.objs[v.stoppedAt].judge ? cWarn : cBad, e.title, true);
             txt(BODY, cInk, e.text, true);
             ImGui::Dummy({0, S(8)});

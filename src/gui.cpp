@@ -64,6 +64,10 @@ void box(ImDrawList* dl, ImVec2 a, ImVec2 b, ImU32 c, float t) {  // crisp outli
     dl->AddRectFilled({a.x, a.y + t}, {a.x + t, b.y - t}, c), dl->AddRectFilled({b.x - t, a.y + t}, {b.x, b.y - t}, c);
 }
 
+void outline(ImDrawList* dl, ImVec2 a, ImVec2 b, ImU32 c, float t, float r) {  // rounded outline drawn inside a..b
+    dl->AddRect({a.x + t / 2, a.y + t / 2}, {b.x - t / 2, b.y - t / 2}, c, r, 0, t);
+}
+
 // Skill radar: rings at 25/50/75/100, the 50 ring (= your usual) darker; labels sit outside the outer ring.
 void radar(const Report& r, float size) {
     ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -107,7 +111,7 @@ void bars(const float* v, int n, float h, int mark = -1) {
         float bw = w / n, g = bw >= S(8) ? S(2) : 0;
         for (int i = 0; i < n; i++) {
             float bh = v[i] / mx * (h - S(2)), x = std::floor(p.x + i * bw + g / 2);
-            if (bh >= 1) dl->AddRectFilled({x, p.y + h - bh}, {std::floor(p.x + (i + 1) * bw - g / 2), p.y + h}, cBlue);
+            if (bh >= 1) dl->AddRectFilled({x, p.y + h - bh}, {std::floor(p.x + (i + 1) * bw - g / 2), p.y + h}, cMuted);
         }
         if (mark >= 0) dl->AddRectFilled({p.x + mark * bw - S(1), p.y}, {p.x + mark * bw + S(1), p.y + h}, cOrange);
     }
@@ -148,9 +152,9 @@ void headline(const char* label, const std::string& value, bool bad, const std::
     ImVec2 p = ImGui::GetCursorScreenPos(), ts = textSize(HEAD, value.c_str());
     ImVec2 b{p.x + ts.x + S(24), p.y + ts.y + S(8)};
     ImDrawList* dl = ImGui::GetWindowDrawList();
-    dl->AddRectFilled({p.x + S(4), p.y + S(4)}, {b.x + S(4), b.y + S(4)}, cInk);
-    dl->AddRectFilled(p, b, bad ? cOrange : cYellow);
-    box(dl, p, b, cInk, S(2));
+    dl->AddRectFilled({p.x + S(4), p.y + S(4)}, {b.x + S(4), b.y + S(4)}, cInk, S(4));
+    dl->AddRectFilled(p, b, bad ? cOrange : cYellow, S(4));
+    outline(dl, p, b, cInk, S(2), S(4));
     dl->AddText(font(HEAD), font(HEAD)->FontSize, {p.x + S(12), p.y + S(4)}, cInk, value.c_str());
     ImGui::Dummy({b.x - p.x + S(4), b.y - p.y + S(4)});
     if (!note.empty()) ImGui::Dummy({0, S(4)}), txt(BODY, cMuted, note, true);
@@ -201,9 +205,9 @@ void badge(int n, int f = TITLE) {
     float side = font(f)->FontSize + S(8);
     ImVec2 p = ImGui::GetCursorScreenPos(), ts = textSize(f, s.c_str());
     ImDrawList* dl = ImGui::GetWindowDrawList();
-    dl->AddRectFilled({p.x + S(3), p.y + S(3)}, {p.x + side + S(3), p.y + side + S(3)}, cInk);
-    dl->AddRectFilled(p, {p.x + side, p.y + side}, cYellow);
-    box(dl, p, {p.x + side, p.y + side}, cInk, S(2));
+    dl->AddRectFilled({p.x + S(3), p.y + S(3)}, {p.x + side + S(3), p.y + side + S(3)}, cInk, S(4));
+    dl->AddRectFilled(p, {p.x + side, p.y + side}, cYellow, S(4));
+    outline(dl, p, {p.x + side, p.y + side}, cInk, S(2), S(4));
     dl->AddText(font(f), font(f)->FontSize, {p.x + (side - ts.x) / 2, p.y + (side - ts.y) / 2}, cInk, s.c_str());
     ImGui::Dummy({side + S(3), side + S(3)});
 }
@@ -254,7 +258,7 @@ void tabOverview(App& a, const Recent& rc) {
     endTop();
 
     auto skills = [&](float w, float h) {
-        window("radar", "Your skills", cBlue, w, h);
+        window("radar", "Your skills", cWell, w, h);
         txt(BODY, cMuted, r.needHistory ? "Needs older plays to compare with, so every skill shows 50 for now."
                                         : "Compared with your usual: 50 = normal for you, higher = better than usual.", true);
         float avail = ImGui::GetContentRegionAvail().x, rs = std::min(avail, ImGui::GetContentRegionAvail().y);
@@ -263,7 +267,7 @@ void tabOverview(App& a, const Recent& rc) {
         endWindow();
     };
     auto work = [&](float h) {
-        window("work", "What to work on", cPink, 0, h, h <= 0);
+        window("work", "What to work on", cWell, 0, h, h <= 0);
         if (!r.nTop) txt(BODY, cInk, "Nothing is costing you much right now. Try slightly harder maps.", true);
         for (int i = 0; i < r.nTop; i++) {
             if (i) ImGui::Dummy({0, S(4)}), rule(), ImGui::Dummy({0, S(4)});
@@ -296,7 +300,7 @@ void tabTiming(const Recent& rc) {
     fact("Clicks with key 1 / key 2", sf("%.0f%% / %.0f%%", pct(rc.keyHits[0], keys), pct(rc.keyHits[1], keys)), cInk,
          sf("steadiness %.0f / %.0f", rc.errKey[0].ur(), rc.errKey[1].ur()));
     endTop();
-    window("hist", "When your clicks land", cYellow, 0, fill(S(240)));
+    window("hist", "When your clicks land", cWell, 0, fill(S(240)));
     txt(BODY, cMuted, "Each bar is 2 ms. The orange line is perfect timing; a narrow, tall pile means steady timing.", true);
     ImGui::Dummy({0, S(8)});
     bars(rc.hist, 100, std::max(S(120), ImGui::GetContentRegionAvail().y - S(32)), 50);
@@ -315,7 +319,7 @@ void tabAim(const Recent& rc) {
         fact(names[b], sf("%.2f%% missed", pct(rc.bMiss[b], rc.bObj[b])), cInk, sf("of %d notes", rc.bObj[b]));
     endTop();
     float h = fill(S(300)), half = std::floor(std::max(S(300), (ImGui::GetContentRegionAvail().x - S(16)) * 0.4f));
-    window("quad", "Misses by screen area", cPink, half, h);
+    window("quad", "Misses by screen area", cWell, half, h);
     {
         static const char* qn[] = {"Top left", "Top right", "Bottom left", "Bottom right"};
         double mx = 0;
@@ -335,7 +339,7 @@ void tabAim(const Recent& rc) {
     }
     endWindow();
     ImGui::SameLine(0, S(16));
-    window("jump", "How far you move between notes", cBlue, 0, h);
+    window("jump", "How far you move between notes", cWell, 0, h);
     txt(BODY, cMuted, "Most of your notes fall in the tall bars; misses usually come from the long moves on the right.", true);
     ImGui::Dummy({0, S(8)});
     bars(rc.jump, 24, std::max(S(96), ImGui::GetContentRegionAvail().y - S(32)));
@@ -352,7 +356,7 @@ void tabSpeed(const Recent& rc, float streamBpm) {
     fact("Steadiness on notes 100\xE2\x80\x93""130 ms apart", sf("%.0f", rc.zone[1].ur()), cInk, "usually the hardest speed");
     fact("Longest run without a pause", sf("%d notes", rc.stamNotes), cInk, sf("%.0f s at %.1f notes per second", rc.stamSec, rc.stamNps));
     endTop();
-    window("streams", "Streams (4 or more quick notes in a row)", cYellow, 0, 0, true);
+    window("streams", "Streams (4 or more quick notes in a row)", cWell, 0, 0, true);
     const char* bands[] = {"under 150 BPM", "150\xE2\x80\x93""170 BPM", "170\xE2\x80\x93""190 BPM", "190\xE2\x80\x93""210 BPM", "over 210 BPM"};
     if (table("st", 7)) {
         for (auto h : {"Speed", "Streams", "Notes", "Missed", "Switching fingers", "First 4 notes", "Later notes"}) ImGui::TableSetupColumn(h);
@@ -371,7 +375,7 @@ void tabSpeed(const Recent& rc, float streamBpm) {
     }
     endWindow();
     gap();
-    window("zones", "Tapping at different speeds", cBlue, 0, 0, true);
+    window("zones", "Tapping at different speeds", cWell, 0, 0, true);
     const char* zones[] = {"Very fast (under 100 ms apart)", "Fast (100\xE2\x80\x93""130 ms)", "Normal (130\xE2\x80\x93""260 ms)", "Slow (over 260 ms)"};
     if (table("zt", 5)) {
         for (auto h : {"Notes apart", "Clicks", "Steadiness", "Switching fingers", "Holding a key too long"}) ImGui::TableSetupColumn(h);
@@ -396,7 +400,7 @@ void tabReading(const Recent& rc) {
     fact("Circles that appear slowly (AR below 8)", sf("%.2f%% missed", pct(rc.arMiss[0], rc.arObj[0])), cInk, sf("%d notes", rc.arObj[0]));
     fact("Circles that appear quickly (AR 8 or more)", sf("%.2f%% missed", pct(rc.arMiss[1], rc.arObj[1])), cInk, sf("%d notes", rc.arObj[1]));
     endTop();
-    window("note", "How to read this", cPink, 0, 0, true);
+    window("note", "How to read this", cWell, 0, 0, true);
     txt(BODY, cInk, "Reading means seeing where the next circle is in time. If you miss more right after pauses, or more when circles appear "
                     "quickly, the problem is reading, not aim. Mods count: HR and DT make circles appear faster, EZ and HT slower.", true);
     endWindow();
@@ -450,7 +454,7 @@ void tabPlays(App& a) {
     static bool asc = false, sortedAsc = true;
     bool sel = a.selPlay >= 0 && a.selPlay < (int)ps.size();
     float total = std::max(ImGui::GetContentRegionAvail().y, sel ? S(680) : S(300)), h = sel ? std::max(S(250), std::floor(total * 0.40f)) : total - S(6);
-    window("list", "Your plays", cBlue, 0, h, false, sf("%zu plays", ps.size()));
+    window("list", "Your plays", cWell, 0, h, false, sf("%zu plays", ps.size()));
     ImGui::AlignTextToFramePadding();
     txt(LABEL, cMuted, "Sort by");
     ImGui::SameLine(0, S(8));
@@ -496,13 +500,11 @@ void tabPlays(App& a) {
                 ImGui::TableNextRow(0, S(44));
                 ImGui::TableNextColumn();
                 bool isSel = a.selPlay == i;
-                ImGui::PushFont(font(MONO));
                 if (ImGui::Selectable((dateStr(p.when) + "##r" + std::to_string(i)).c_str(), isSel, ImGuiSelectableFlags_SpanAllColumns, {0, S(44)})) a.selPlay = i;
-                ImGui::PopFont();
                 if (ImGui::IsItemHovered()) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
                 auto col = [](int f, ImU32 c, const std::string& s) { if (ImGui::TableNextColumn()) ImGui::AlignTextToFramePadding(), txt(f, c, s); };
-                col(BODY, cInk, p.title), col(MONO, p.stars > 0 ? cInk : cMuted, p.stars > 0 ? sf("%.2f", p.stars) : "?"), col(BODY, cMuted, modStr(p.mods));
-                col(MONO, cInk, sf("%.2f%%", 100 * p.acc)), col(MONO, p.gmiss ? cInk : cGood, p.gmiss ? sf("%d", p.gmiss) : "FC"), col(MONO, cInk, sf("%.0f", p.err.ur()));
+                col(BODY, cInk, p.title), col(BODY, p.stars > 0 ? cInk : cMuted, p.stars > 0 ? sf("%.2f", p.stars) : "?"), col(BODY, cMuted, modStr(p.mods));
+                col(BODY, cInk, sf("%.2f%%", 100 * p.acc)), col(BODY, p.gmiss ? cInk : cGood, p.gmiss ? sf("%d", p.gmiss) : "FC"), col(BODY, cInk, sf("%.0f", p.err.ur()));
             }
         ImGui::EndTable();
     }
@@ -511,7 +513,7 @@ void tabPlays(App& a) {
     if (!sel) return;
     gap();
     auto& p = ps[a.selPlay];
-    window("detail", p.title.c_str(), cYellow, 0, fill(S(360)));
+    window("detail", p.title.c_str(), cWell, 0, fill(S(360)));
     txt(BODY, cMuted, sf("%s  \xC2\xB7  %s  \xC2\xB7  %.2f%% accuracy  \xC2\xB7  %d misses  \xC2\xB7  steadiness %.0f  \xC2\xB7  best combo %d",
                          dateStr(p.when).c_str(), modStr(p.mods).c_str(), 100 * p.acc, p.gmiss, p.err.ur(), p.combo), true);
     ImGui::Dummy({0, S(8)});
@@ -560,7 +562,7 @@ void tabMaps(App& a) {
     if (a.busy) { ImGui::SameLine(0, S(16)); ImGui::AlignTextToFramePadding(); txt(BODY, cMuted, "searching..."); }
     endWindow();
     gap();
-    window("list", "Suggestions", cYellow, 0, 0, true);
+    window("list", "Suggestions", cWell, 0, 0, true);
     if (a.sugg.empty()) txt(BODY, cInk, "No maps in this star range. Widen the range or download a few maps.", true);
     for (size_t i = 0; i < a.sugg.size(); i++) {
         auto& s = a.sugg[i];
@@ -613,13 +615,12 @@ void tabProgress(const Report& r, int gen) {
     gap();
     const char* names[] = {"Timing steadiness by day (lower is better)", "Jump misses by day", "Stream misses by day"};
     const char* units[] = {"", "%", "%"};
-    const ImU32 bar[] = {cYellow, cPink, cBlue};
     std::vector<float>* series[] = {&ur, &jm, &sm};
     float h = std::max(S(150), std::floor((ImGui::GetContentRegionAvail().y - 2 * S(16) - S(6)) / 3));
     for (int i = 0; i < 3; i++) {
         if (i) gap();
         ImGui::PushID(i);
-        window("c", names[i], bar[i], 0, h, false, sf("%s this week", trendWord(r.trend[i])));
+        window("c", names[i], cWell, 0, h, false, sf("%s this week", trendWord(r.trend[i])));
         line(*series[i], std::max(S(48), ImGui::GetContentRegionAvail().y), units[i]);
         endWindow();
         ImGui::PopID();
@@ -644,7 +645,7 @@ float menuBar(App& a, int& tab, bool ready) {
     // logo: a hit circle with its approach ring
     ImVec2 c{wp.x + pad + S(13), wp.y + padY + ctl / 2};
     dl->AddCircle(c, S(13), cOrange, 32, S(2.5f));
-    dl->AddCircleFilled(c, S(8), cPink, 24);
+    dl->AddCircleFilled(c, S(8), cYellow, 24);
     dl->AddCircle(c, S(8), cInk, 24, S(2));
     ImGui::SetCursorPos({pad + S(34), padY + (ctl - font(BAR)->FontSize) / 2});
     txt(BAR, cInk, "osu-coach");
@@ -668,7 +669,7 @@ float menuBar(App& a, int& tab, bool ready) {
             if (ImGui::InvisibleButton(kTabs[i], {tw, ctl})) tab = i;
             bool on = tab == i, hov = ImGui::IsItemHovered();
             if (hov) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-            if (on || hov) dl->AddRectFilled(p, {p.x + tw, p.y + ctl}, on ? cInk : cWell);
+            if (on || hov) dl->AddRectFilled(p, {p.x + tw, p.y + ctl}, on ? cInk : cWell, S(4));
             ImVec2 ts = textSize(BODY, kTabs[i]);
             dl->AddText(font(BODY), font(BODY)->FontSize, {p.x + tabPad, p.y + (ctl - ts.y) / 2}, on ? cWin : cInk, kTabs[i]);
             x += tw;
@@ -704,7 +705,7 @@ void statusBar(App& a, float h) {
         int on = (int)(n * a.done / a.total);
         for (int i = 0; i < on; i++) {
             float x = p.x + S(2) + bg + i * (bw + bg);
-            dl->AddRectFilled({x, p.y + S(6)}, {x + bw, q.y - S(6)}, cBlue);
+            dl->AddRectFilled({x, p.y + S(6)}, {x + bw, q.y - S(6)}, cInk);
         }
         right = p.x - S(16);
     }
@@ -770,21 +771,22 @@ void endWindow() {
     ImGui::EndChild();
     WinFrame f = gFrames.back();
     gFrames.pop_back();
-    float sh = S(6), bt = S(2);
+    float bt = S(2), r = S(8);
+    bool primary = f.title && f.bar != cWell;
     ImVec2 a = f.min, b{ImGui::GetItemRectMax().x + bt, ImGui::GetItemRectMax().y + bt};
     ImGui::SetCursorScreenPos({a.x, b.y});
     ImGui::Dummy({0, 0});
     ImGui::EndGroup();
     // drawn into the parent, which renders under the child's content
     ImDrawList* dl = ImGui::GetWindowDrawList();
-    dl->AddRectFilled({a.x + sh, a.y + sh}, {b.x + sh, b.y + sh}, cInk);
-    dl->AddRectFilled(a, b, cWin);
+    if (primary) dl->AddRectFilled({a.x + S(6), a.y + S(6)}, {b.x + S(6), b.y + S(6)}, cInk, r);
+    dl->AddRectFilled(a, b, cWin, r);
     if (f.title) {
         float by = a.y + f.barH;
-        dl->AddRectFilled(a, {b.x, by}, f.bar);
+        dl->AddRectFilled(a, {b.x, by}, f.bar, r, ImDrawFlags_RoundCornersTop);
         dl->AddRectFilled({a.x, by - bt}, {b.x, by}, cInk);
         ImFont* ft = font(BAR);
-        ImU32 tc = f.bar == cBlue ? cWin : cInk;  // cream on blue, ink on the light bars
+        ImU32 tc = cInk;
         float right = b.x - S(14);
         if (!f.note.empty()) {
             ImVec2 ns = textSize(LABEL, f.note.c_str());
@@ -796,7 +798,7 @@ void endWindow() {
         dl->AddText(ft, ft->FontSize, {a.x + S(16), a.y + (f.barH - ft->FontSize) / 2}, tc, f.title);
         dl->PopClipRect();
     }
-    box(dl, a, b, cInk, bt);
+    outline(dl, a, b, cInk, bt, r);
 }
 void gap() { ImGui::Dummy({0, 0}); }  // with 8 px item spacing on both sides: 16 px between windows
 void rule() {
@@ -816,9 +818,9 @@ static bool pressButton(const char* label, ImVec2 size, ImU32 face, ImU32 hover)
     float sh = S(3), d = held ? sh : 0;
     ImDrawList* dl = ImGui::GetWindowDrawList();
     ImVec2 a{p.x + d, p.y + d}, b{a.x + size.x, a.y + size.y};
-    if (!held) dl->AddRectFilled({p.x + sh, p.y + sh}, {p.x + size.x + sh, p.y + size.y + sh}, ImGui::GetColorU32(cInk));
-    dl->AddRectFilled(a, b, ImGui::GetColorU32(hov ? hover : face));
-    box(dl, a, b, ImGui::GetColorU32(cInk), S(2));
+    if (!held) dl->AddRectFilled({p.x + sh, p.y + sh}, {p.x + size.x + sh, p.y + size.y + sh}, ImGui::GetColorU32(cInk), S(4));
+    dl->AddRectFilled(a, b, ImGui::GetColorU32(hov ? hover : face), S(4));
+    outline(dl, a, b, ImGui::GetColorU32(cInk), S(2), S(4));
     ImGui::PushStyleColor(ImGuiCol_Text, cInk);
     ImGui::RenderTextClipped(a, b, label, nullptr, &ts, {0.5f, 0.5f});
     ImGui::PopStyleColor();
@@ -844,7 +846,7 @@ void headerRow() {
     }
 }
 void cell(ImU32 c, const std::string& s) { ImGui::TableNextColumn(); txt(BODY, c, s); }
-void cellMono(const std::string& s) { ImGui::TableNextColumn(); txt(MONO, cInk, s); }
+void cellMono(const std::string& s) { ImGui::TableNextColumn(); txt(BODY, cInk, s); }
 
 void setupStyle(float dpi) {
     gS = dpi;
@@ -888,6 +890,7 @@ void setupStyle(float dpi) {
     st.SelectableTextAlign = {0, 0.5f};
     st.ScaleAllSizes(dpi);
     st.PopupBorderSize = st.FrameBorderSize = S(2);
+    st.FrameRounding = st.PopupRounding = S(4), st.GrabRounding = S(2), st.ScrollbarRounding = S(7);
     ImVec4* c = st.Colors;
     auto v4 = [](ImU32 u) { return ImGui::ColorConvertU32ToFloat4(u); };
     for (int i = 0; i < ImGuiCol_COUNT; i++) c[i] = v4(cInk);
@@ -934,7 +937,7 @@ void drawApp(App& a) {
         endWindow();
     } else if (a.scanned) {
         if (!a.res.dbOk) {
-            window("dberr", "Error", cBlue, 0, 0, true);
+            window("dberr", "Error", cWell, 0, 0, true);
             txt(BODY, cBad, "osu!.db could not be read, so star ratings and practice maps are switched off.", true);
             endWindow();
             gap();
