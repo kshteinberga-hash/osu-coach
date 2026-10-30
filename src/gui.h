@@ -3,6 +3,7 @@
 #include <memory>
 #include <mutex>
 #include "coach.h"
+#include "online.h"
 #include "scan.h"
 #include "viewer.h"
 
@@ -13,13 +14,27 @@ struct MapSearch {
     char text[128] = "";
     std::vector<Suggestion> res; size_t shown = 5;
 };
+// The Maps tab's osu.ppy.sh section; the search runs on a worker, which fills pOnline and sets onlineReady.
+struct OnlineSearch {
+    OnlineQuery q; bool rangeSet = false;
+    char text[128] = "";
+    std::vector<OnlineMap> res; std::string cursor, error; bool searched = false;
+    ApiKeys keys; bool haveKeys = false, editKeys = false;
+    char keyId[64] = "", keySecret[128] = "";
+};
 struct App {
-    App() { maps[EASY].status = 1, maps[EASY].shortOnly = false; }
+    App() { maps[EASY].status = 1, maps[EASY].shortOnly = false, online.haveKeys = loadApiKeys(online.keys); }
     std::wstring osuDir;
     ScanResult res;
     Report rep;
     MapSearch maps[NMODE];
-    int mapMode = PRACTICE;
+    OnlineSearch online;
+    int mapMode = PRACTICE;  // NMODE: the osu.ppy.sh section
+    bool onlineBusy = false;  // only the UI thread touches this
+    std::atomic<bool> onlineReady = false;
+    OnlinePage pOnline;
+    bool pOnlineMore = false;  // the running search adds a page instead of starting over
+    void startOnline(bool more);
     float streamBpm = 0;
     int trainSkill = -1, selPlay = -1;
     bool scanned = false;

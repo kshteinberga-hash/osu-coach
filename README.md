@@ -4,7 +4,7 @@ A personal coach for **osu! stable** (standard mode). It reads the replays and m
 
 ![osu-coach overview](docs/screenshot.png)
 
-It's a single Windows exe (including the embedded UI artwork): no installer, no account, no API key. It only reads files on your PC.
+It's a single Windows exe (including the embedded UI artwork): no installer and no account. It only reads files on your PC, except the optional **On osu.ppy.sh** map search, which talks to the osu! API with a key you make yourself.
 
 ## Watch your replays with the coach
 
@@ -39,7 +39,7 @@ Space plays and pauses, the arrow keys jump between mistakes, and Enter continue
 | **Speed** | finger lock (still holding the last key when you press the next), switching fingers, speeding up in long streams, your comfortable stream BPM |
 | **Reading** | misses on the first note after a pause, and on circles that appear slowly vs quickly (AR) |
 | **Plays** | every play, and for each one every miss with its time and cause |
-| **Maps** | maps from your Songs folder, in three sections. **Practice**: short maps (2 minutes or less) that train your weakest skill. **Warm-up**: short, steady maps below your level to get your fingers going before a session, any status (ranked, loved, graveyard). **Search**: maps you can pass comfortably at your level, light on your weak skill, searchable by artist, title, mapper or tags. Star ranges start from your level; anime songs are hidden by default (guessed from the map's source and tags, since osu! doesn't store a genre) |
+| **Maps** | maps from your Songs folder, in three sections. **Practice**: short maps (2 minutes or less) that train your weakest skill. **Warm-up**: short, steady maps below your level to get your fingers going before a session, any status (ranked, loved, graveyard). **Search**: maps you can pass comfortably at your level, light on your weak skill, searchable by artist, title, mapper or tags. Star ranges start from your level; anime songs are hidden by default (guessed from the map's source and tags, since osu! doesn't store a genre). **On osu.ppy.sh**: searches every map on the osu! website by text, stars, length and status, with buttons to open the map page or download it. osu! only lets signed-in apps search, so the first time it asks for a free OAuth app's Client ID and secret (osu! account settings → OAuth → New OAuth Application, callback URL `http://localhost`); they're saved in `osu-api.ini` next to the exe |
 | **Progress** | day-by-day timing, jump misses and stream misses, kept in `history.json` so it survives deleting maps |
 
 ## Use

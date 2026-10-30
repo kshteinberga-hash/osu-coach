@@ -5,6 +5,7 @@
 #include <cstdarg>
 #include <ctime>
 #include <map>
+#include <unordered_set>
 #include "gui.h"
 #include "imgui.h"
 #include "imgui_internal.h"
@@ -509,6 +510,117 @@ bool checkbox(const char* label, bool* v) {
     return ImGui::Checkbox(label, v);
 }
 
+// The osu.ppy.sh section of the Maps tab, inside the controls window that tabMaps() opened.
+void onlineMaps(App& a) {
+    OnlineSearch& o = a.online;
+    if (!o.haveKeys || o.editKeys) {
+        txt(BODY, cInk, "osu! only lets signed-in apps search its maps, so this needs a free API key from your osu! account. "
+                        "It takes a minute, once:", true);
+        ImGui::Dummy({0, S(4)});
+        txt(BODY, cInk, "1. Open your osu! account settings and scroll to OAuth.", true);
+        txt(BODY, cInk, "2. Click \"New OAuth Application\". Any name works; for the callback URL type http://localhost", true);
+        txt(BODY, cInk, "3. Copy its Client ID and Client Secret here.", true);
+        ImGui::Dummy({0, S(4)});
+        if (button2("Open osu! account settings")) open(L"https://osu.ppy.sh/home/account/edit#oauth");
+        ImGui::Dummy({0, S(4)});
+        field("Client ID", S(200));
+        ImGui::InputText("##id", o.keyId, sizeof o.keyId, ImGuiInputTextFlags_CharsDecimal);
+        endField();
+        field("Client secret", S(360));
+        ImGui::InputText("##secret", o.keySecret, sizeof o.keySecret, ImGuiInputTextFlags_Password);
+        endField();
+        flow(buttonW("Save"), S(24));
+        ImGui::BeginDisabled(!o.keyId[0] || !o.keySecret[0]);
+        if (button1("Save")) {
+            o.keys = {o.keyId, o.keySecret};
+            o.haveKeys = saveApiKeys(o.keys), o.editKeys = !o.haveKeys;
+            o.error = o.haveKeys ? "" : "Couldn't save osu-api.ini next to osu-coach.exe. Is the folder read-only?";
+            o.keySecret[0] = 0;
+        }
+        ImGui::EndDisabled();
+        if (o.haveKeys) {
+            ImGui::SameLine(0, S(12));
+            if (button2("Cancel")) o.editKeys = false, o.keySecret[0] = 0;
+        }
+        txt(LABEL, cMuted, "Saved in osu-api.ini next to osu-coach.exe. It's only sent to osu.ppy.sh.", true);
+        if (!o.error.empty()) txt(BODY, cBad, o.error, true);
+        endWindow();
+        return;
+    }
+    static const char* const kStatus[] = {"Any status", "Ranked and loved", "Ranked only"};
+    txt(BODY, cMuted, "Every map on osu.ppy.sh, not just the ones you have. Type an artist, title or mapper, or leave it empty to see "
+                      "the most played maps in the star range.", true);
+    ImGui::Dummy({0, S(8)});
+    bool go = false;
+    field("Search", S(320));
+    go |= ImGui::InputTextWithHint("##otext", "artist, title, mapper...", o.text, sizeof o.text, ImGuiInputTextFlags_EnterReturnsTrue);
+    endField();
+    field("Stars", S(240));
+    if (ImGui::DragFloatRange2("##ostars", &o.q.lo, &o.q.hi, 0.05f, 0, 12, "%.2f\xE2\x98\x85")) o.rangeSet = true;
+    endField();
+    field("Status", S(216));
+    ImGui::Combo("##ostatus", &o.q.status, kStatus, 3);
+    endField();
+    checkbox("Hide anime songs", &o.q.noAnime);
+    checkbox("2 minutes or shorter", &o.q.shortOnly);
+    flow(buttonW("Find maps"), S(24));
+    ImGui::BeginDisabled(a.onlineBusy);
+    go |= button1("Find maps");
+    ImGui::EndDisabled();
+    if (go) a.startOnline(false);
+    ImGui::SameLine(0, S(12));
+    if (button2("Change API keys")) o.editKeys = true, snprintf(o.keyId, sizeof o.keyId, "%s", o.keys.id.c_str());
+    if (a.onlineBusy) { ImGui::SameLine(0, S(16)); ImGui::AlignTextToFramePadding(); txt(BODY, cMuted, "searching..."); }
+    if (!o.error.empty()) txt(BODY, cBad, o.error, true);
+    endWindow();
+    gap();
+
+    static std::unordered_set<int> have;  // mapsets in osu!.db, rebuilt once per scan
+    static int haveFor = -1;
+    if (haveFor != a.gen) {
+        have.clear();
+        for (auto& d : a.res.db) if (d.sid > 0) have.insert(d.sid);
+        haveFor = a.gen;
+    }
+    window("olist", "Maps on osu.ppy.sh", cWell, 0, 0, true, o.res.empty() ? "" : sf("%zu shown", o.res.size()));
+    if (o.res.empty())
+        txt(BODY, cInk, !o.searched ? "Pick a star range and press Find maps."
+                                    : "No maps match. Check the spelling, widen the star range or untick some filters.", true);
+    for (size_t i = 0; i < o.res.size(); i++) {
+        auto& r = o.res[i];
+        ImGui::PushID((int)i);
+        if (i) ImGui::Dummy({0, S(4)}), rule(), ImGui::Dummy({0, S(4)});
+        ImGui::BeginGroup();
+        badge((int)i + 1);
+        ImGui::EndGroup();
+        ImGui::SameLine(0, S(16));
+        ImGui::BeginGroup();
+        txt(TITLE, cInk, r.artist + " - " + r.title + " [" + r.version + "]", true);
+        txt(LABEL, cMuted, "mapped by " + r.creator);
+        std::string status = r.status.empty() ? "" : (char)toupper((unsigned char)r.status[0]) + r.status.substr(1);
+        txt(BODY, cMuted, sf("%.2f\xE2\x98\x85, %d:%02d, %.0f BPM, AR %.1f, OD %.1f. %s, played %s times.", r.stars, r.lengthS / 60,
+                             r.lengthS % 60, r.bpm, r.ar, r.od, status.c_str(),
+                             r.plays >= 1000000 ? sf("%.1fM", r.plays / 1e6).c_str() : r.plays >= 1000 ? sf("%.0fk", r.plays / 1e3).c_str()
+                                                                                                       : std::to_string(r.plays).c_str()) +
+                                 (have.count(r.sid) ? " You already have it." : ""),
+            true);
+        ImGui::Dummy({0, S(4)});
+        if (button1("Open map page")) open(L"https://osu.ppy.sh/beatmapsets/" + std::to_wstring(r.sid) + L"#osu/" + std::to_wstring(r.bid));
+        ImGui::SameLine(0, S(12));
+        if (button2("Download")) open(L"https://osu.ppy.sh/beatmapsets/" + std::to_wstring(r.sid) + L"/download");
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Downloads in your browser (you need to be signed in to osu! there). Open the .osz to add it.");
+        ImGui::EndGroup();
+        ImGui::PopID();
+    }
+    if (!o.cursor.empty() && !o.res.empty()) {
+        ImGui::Dummy({0, S(4)}), rule(), ImGui::Dummy({0, S(4)});
+        ImGui::BeginDisabled(a.onlineBusy);
+        if (button2("Show more")) a.startOnline(true);
+        ImGui::EndDisabled();
+    }
+    endWindow();
+}
+
 void tabMaps(App& a) {
     static const char* const kSection[NMODE] = {"Practice", "Warm-up", "Search"};
     static const char* const kIntro[NMODE] = {
@@ -520,13 +632,15 @@ void tabMaps(App& a) {
     static const char* const kResults[NMODE] = {"Practice maps", "Warm-up maps", "Maps you can pass"};
     static const char* const kStatus[] = {"Any status", "Ranked and loved", "Ranked only"};
     int m = a.mapMode;
-    MapSearch& s = a.maps[m];
-    window("ctl", "Maps from your Songs folder", cOrange, 0, 0, true);
-    for (int i = 0; i < NMODE; i++) {
-        if (i) ImGui::SameLine(0, S(8));
-        if (i == m ? button1(kSection[i]) : button2(kSection[i])) a.mapMode = i;
+    window("ctl", m == NMODE ? "Maps on osu.ppy.sh" : "Maps from your Songs folder", cOrange, 0, 0, true);
+    for (int i = 0; i <= NMODE; i++) {
+        const char* name = i == NMODE ? "On osu.ppy.sh" : kSection[i];
+        if (i) flow(buttonW(name), S(8));
+        if (i == m ? button1(name) : button2(name)) a.mapMode = i;
     }
     ImGui::Dummy({0, S(4)});
+    if (m == NMODE) return onlineMaps(a);  // ends the window itself
+    MapSearch& s = a.maps[m];
     txt(BODY, cMuted, kIntro[m], true);
     ImGui::Dummy({0, S(8)});
     bool go = false;

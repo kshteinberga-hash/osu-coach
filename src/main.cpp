@@ -76,6 +76,17 @@ void App::startSuggest(int m) {
     }).detach();
 }
 
+void App::startOnline(bool more) {
+    if (onlineBusy || !online.haveKeys || (more && online.cursor.empty())) return;
+    onlineBusy = true, pOnlineMore = more;
+    online.q.text = online.text;
+    std::thread([this, k = online.keys, q = online.q, cur = more ? online.cursor : std::string()] {
+        pOnline = searchOnline(k, q, cur);
+        onlineReady = true;
+        PostMessageW((HWND)hwnd, WM_APP, 0, 0);
+    }).detach();
+}
+
 void App::poll() {
     if (scanReady.exchange(false)) {
         res = std::move(pRes), rep = std::move(pRep), streamBpm = pBpm;
@@ -83,7 +94,19 @@ void App::poll() {
             maps[m].res = std::move(pSugg[m]), maps[m].shown = 5;
             if (!maps[m].rangeSet) maps[m].lo = pLo[m], maps[m].hi = pHi[m];
         }
+        if (!online.rangeSet) online.q.lo = maps[EASY].lo, online.q.hi = maps[EASY].hi;  // starts at the maps you can pass
         scanned = true, selPlay = -1, gen++, busy = false;
+    }
+    if (onlineReady.exchange(false)) {
+        OnlineSearch& o = online;
+        if (!pOnlineMore) o.res.clear();
+        o.error = pOnline.error, o.searched = true;
+        if (o.error.empty()) {
+            o.cursor = pOnline.cursor;
+            for (auto& m : pOnline.maps)  // a page can repeat a set from the last one
+                if (std::none_of(o.res.begin(), o.res.end(), [&](const OnlineMap& r) { return r.sid == m.sid; })) o.res.push_back(m);
+        }
+        onlineBusy = false;
     }
     if (suggReady.exchange(false)) maps[pMode].res = std::move(pSugg[pMode]), maps[pMode].shown = 5, busy = false;
     if (objsReady.exchange(false)) selObjs = std::move(pObjs), selObjsFor = pObjsFor, selObjsGen = pObjsGen, objsBusy = false;
@@ -385,7 +408,7 @@ int wmain(int argc, wchar_t** argv) {
         renderFrame(app, !saveShot ? L"" : shotDir + (shot / 4 - 1 == 8 ? std::wstring(L"\\viewer.bmp") : L"\\tab" + std::to_wstring(shot / 4 - 1) + L".bmp"));
     }
     app.quitting = true;  // workers stop at their next replay or map
-    while (app.busy || app.objsBusy) app.poll(), Sleep(20);  // only poll() clears these: let running workers land
+    while (app.busy || app.objsBusy || app.onlineBusy) app.poll(), Sleep(20);  // only poll() clears these: let running workers land
     releaseUiArt();
     ImGui_ImplDX11_Shutdown();
     ImGui_ImplWin32_Shutdown();

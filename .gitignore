@@ -9,3 +9,4 @@ history.json*
 osu-coach.ini
 build/
 __pycache__/
+osu-api.ini

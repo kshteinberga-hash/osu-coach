@@ -274,6 +274,7 @@ int main() {
     void audioTests(); audioTests();
     void viewerTests(); viewerTests();
     void coachTests(); coachTests();
+    void onlineTests(); onlineTests();
     std::printf("%d checks, %d failures\n", t_run, t_fail);
     return t_fail != 0;
 }
