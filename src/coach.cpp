@@ -14,18 +14,6 @@ static const char* const kLabel[NSKILL] = {"", "jump notes (4-7 radii)", "big ju
                                            "fast notes (gaps under 130 ms)", "first notes after a break", "notes late in long runs"};
 static constexpr int64_t DAY_MS = 86400000LL;
 
-bool inSkill(const ObjRes& o, Skill s) {
-    switch (s) {
-        case JUMPS: return o.bucket == JUMP;
-        case BIGJUMPS: return o.bucket == BIG;
-        case STREAMS: return o.inStream;
-        case SPEED: return o.gap < 130;
-        case READING: return o.afterBreak;
-        case STAMINA: return o.tired;
-        default: return o.judge > 0;
-    }
-}
-
 int ymd(int64_t ms) {
     time_t t = (time_t)(ms / 1000);
     tm l{};
@@ -58,16 +46,6 @@ struct Agg {
     double ur() const { Acc a; a.n = en, a.s = es, a.ss = ess; return a.ur(); }
     double rate(int s) const { return obj[s] ? miss[s] / obj[s] : 0; }
 };
-struct Counts { int obj[NSKILL]{}, miss[NSKILL]{}; };
-
-Counts counts(const PlayStats& p) {
-    Counts c;
-    for (auto& o : p.objs)
-        for (int s = 1; s < NSKILL; s++)
-            if (inSkill(o, (Skill)s)) c.obj[s]++, c.miss[s] += o.judge == 0;
-    c.obj[TIMING] = (int)p.err.n;
-    return c;
-}
 int binOf(float stars) { return stars > 0 ? (int)std::floor(stars * 4) : -1; }
 int total(const PlayStats& p) { int t = p.g300 + p.g100 + p.g50 + p.gmiss; return t ? t : p.nobj; }
 double phi(double x) { return 0.5 * std::erfc(-x / std::sqrt(2.0)); }
@@ -89,9 +67,8 @@ Report coach(const std::vector<PlayStats>& plays, std::vector<Day>& hist, int64_
     for (auto& p : plays) {
         Day& d = fresh[{ymd(p.when), binOf(p.stars)}];
         d.date = ymd(p.when), d.bin = binOf(p.stars);
-        Counts c = counts(p);
         d.plays++, d.objs += p.nobj, d.fcs += p.gmiss == 0, d.accSum += p.acc;
-        for (int s = 0; s < NSKILL; s++) d.obj[s] += c.obj[s], d.miss[s] += c.miss[s];
+        for (int s = 0; s < NSKILL; s++) d.obj[s] += p.skObj[s], d.miss[s] += p.skMiss[s];
         d.es += p.err.s, d.ess += p.err.ss, d.en += p.err.n;
     }
     std::map<int, int> freshPlays, storedPlays;
@@ -130,17 +107,14 @@ Report coach(const std::vector<PlayStats>& plays, std::vector<Day>& hist, int64_
     Acc recentErr;
     int sig[8]{};  // under, over, zOv(fast+switch), zPairs, alt, dbl, keyJ, keyK
     double lateSum = 0, lateN = 0;
-    std::vector<Counts> rc;
     Agg act;
     double expMiss[NSKILL]{}, expUr = 0, expW = 0;
     for (size_t i = from; i < plays.size(); i++) {
         auto& p = plays[i];
-        Counts c = counts(p);
-        rc.push_back(c);
         recentErr.add(p.err);
         for (int s = 1; s < NSKILL; s++) {
-            act.obj[s] += c.obj[s], act.miss[s] += c.miss[s];
-            if (auto b = baseFor(binOf(p.stars), s)) expMiss[s] += b->rate(s) * c.obj[s];
+            act.obj[s] += p.skObj[s], act.miss[s] += p.skMiss[s];
+            if (auto b = baseFor(binOf(p.stars), s)) expMiss[s] += b->rate(s) * p.skObj[s];
         }
         if (auto b = baseFor(binOf(p.stars), 0)) expUr += b->ur() * p.err.n, expW += p.err.n;
         sig[0] += p.under, sig[1] += p.over, sig[2] += p.zOv[0] + p.zOv[1], sig[3] += p.zPairs[0] + p.zPairs[1];
@@ -183,7 +157,7 @@ Report coach(const std::vector<PlayStats>& plays, std::vector<Day>& hist, int64_
                 double acc = (p300 * 300 + (1 - p300) * 100) / 300 * (tot - p.gmiss) / tot;
                 cost += std::max(0.0, ppEstimate(p.stars, p.od, tot, (float)acc, p.gmiss) - base);
             } else {
-                int k = std::min<int>(p.gmiss, rc[i - from].miss[s]);
+                int k = std::min<int>(p.gmiss, p.skMiss[s]);
                 float acc = std::min(1.f, p.acc + 300.f * k / (300.f * tot));
                 cost += ppEstimate(p.stars, p.od, tot, acc, p.gmiss - k) - base;
             }

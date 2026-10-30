@@ -1,7 +1,6 @@
 #pragma once
 #include "analyze.h"
 
-enum Skill { TIMING, JUMPS, BIGJUMPS, STREAMS, SPEED, READING, STAMINA, NSKILL };
 extern const char* const kSkillName[NSKILL];
 
 // Daily totals per 0.25-star bin (bin = floor(stars * 4), -1 = unknown). Survives deleted maps.
@@ -21,7 +20,6 @@ struct Report {
     size_t recentFrom;  // index of the first recent play
 };
 
-bool inSkill(const ObjRes& o, Skill s);
 int ymd(int64_t unixMs);  // local date as yyyymmdd
 double ppEstimate(float stars, float od, int nobj, float acc, int misses);
 Report coach(const std::vector<PlayStats>& plays, std::vector<Day>& history, int64_t nowMs);

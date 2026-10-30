@@ -20,6 +20,7 @@ PlayStats mk(int64_t when, float stars, int nJump, int jumpMiss, bool fc, float 
         p.objs.push_back(o);
     }
     p.nobj = (int)p.objs.size();
+    tallySkills(p);
     return p;
 }
 }

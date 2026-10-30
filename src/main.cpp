@@ -64,6 +64,14 @@ void App::poll() {
     if (suggReady.exchange(false)) sugg = std::move(pSugg), busy = false;
 }
 
+const std::vector<ObjRes>& App::selectedObjs() {
+    if (selObjsFor != selPlay || selObjsGen != gen) {
+        selObjs = selPlay >= 0 && selPlay < (int)res.plays.size() ? reanalyze(osuDir, res.plays[selPlay], res.db) : std::vector<ObjRes>{};
+        selObjsFor = selPlay, selObjsGen = gen;
+    }
+    return selObjs;
+}
+
 void App::pickFolder() {
     IFileOpenDialog* d = nullptr;
     if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_ALL, IID_PPV_ARGS(&d)))) return;

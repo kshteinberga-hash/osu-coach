@@ -4,6 +4,7 @@
 
 enum Cause : uint8_t { HIT, AIM, TAP, OFFTIME, NOPRESS };
 enum Bucket : uint8_t { DENSE, STREAM, JUMP, BIG };
+enum Skill { TIMING, JUMPS, BIGJUMPS, STREAMS, SPEED, READING, STAMINA, NSKILL };
 
 // One circle or slider head. Times in real ms (mods applied), distances in circle radii.
 struct ObjRes {
@@ -31,8 +32,11 @@ struct PlayStats {
     int zPairs[4], zAlt[4], zOv[4], keyHits[2];                          // zones: <100, 100-130, 130-260, 260+ ms
     std::vector<StreamSeg> streams; int stamNotes; float stamSec, stamNps;
     int brkObj, brkMiss, flowObj, flowMiss;
-    std::vector<ObjRes> objs;
+    int skObj[NSKILL], skMiss[NSKILL];  // notes and misses per skill (Timing: hits, no misses); see inSkill
+    std::vector<ObjRes> objs;           // per note; scan() drops these to save memory, see reanalyze()
 };
+bool inSkill(const ObjRes& o, Skill s);
+void tallySkills(PlayStats& s);  // fills skObj/skMiss from objs
 int zoneOf(float gapMs);
 // Stream segments [first, last) over per-object spacing (radii) and gap (ms, gap[i] = t[i] - t[i-1]):
 // >= 4 objects, spacing <= 3, every gap within 15% of the first one, first gap <= maxGap (1/4 of the beat).

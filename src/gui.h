@@ -21,6 +21,9 @@ struct App {
     std::vector<Suggestion> pSugg;
     float pBpm = 0;
     void* hwnd = nullptr;
+    std::vector<ObjRes> selObjs;  // per-note results of the selected play, see selectedObjs()
+    int selObjsFor = -1, selObjsGen = -1;
+    const std::vector<ObjRes>& selectedObjs();
     void startScan();
     void startSuggest();
     void pickFolder();

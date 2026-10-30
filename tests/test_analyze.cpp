@@ -105,6 +105,7 @@ static void test_stream() {
     CHECK(s.zPairs[1] == 5 && s.zAlt[1] == 5);
     CHECK(s.keyHits[0] == 3 && s.keyHits[1] == 3);
     CHECK(s.objs[3].inStream);
+    CHECK(s.skObj[STREAMS] == 6 && s.skMiss[STREAMS] == 0 && s.skObj[TIMING] == 6);
 }
 
 static void test_half_not_stream() {

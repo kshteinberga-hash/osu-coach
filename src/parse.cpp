@@ -151,15 +151,18 @@ std::wstring widen(std::string_view s) {
 
 static bool decodeFrames(const uint8_t* src, size_t n, std::vector<Frame>& out) {
     if (n < 13) return false;
-    size_t cap = n * 10 + 4096;
+    uint64_t size;  // header: 5 bytes of properties, then the decoded size (all ones when unknown)
+    memcpy(&size, src + 5, 8);
+    bool known = size < (256u << 20);
+    size_t cap = known ? (size_t)size : n * 10 + 4096;
     std::string txt;
-    for (int tries = 0; tries < 6; tries++, cap *= 2) {
+    for (int tries = 0; tries < 6; tries++, cap *= 2) {  // a guessed size may be too small: retry larger
         txt.resize(cap);
         SizeT dl = cap, sl = n - 13;
         ELzmaStatus st;
         SRes r = LzmaDecode((Byte*)txt.data(), &dl, src + 13, &sl, src, 5, LZMA_FINISH_ANY, &st, &kAlloc);
         if (r != SZ_OK && r != SZ_ERROR_INPUT_EOF) return false;
-        if (dl < cap || st == LZMA_STATUS_FINISHED_WITH_MARK) { txt.resize(dl); break; }
+        if (known || dl < cap || st == LZMA_STATUS_FINISHED_WITH_MARK) { txt.resize(dl); break; }
     }
     out.clear();
     out.reserve(txt.size() / 16);

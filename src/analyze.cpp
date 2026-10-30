@@ -23,6 +23,26 @@ std::vector<std::pair<size_t, size_t>> findStreams(const std::vector<float>& sp,
     return out;
 }
 
+bool inSkill(const ObjRes& o, Skill s) {
+    switch (s) {
+        case JUMPS: return o.bucket == JUMP;
+        case BIGJUMPS: return o.bucket == BIG;
+        case STREAMS: return o.inStream;
+        case SPEED: return o.gap < 130;
+        case READING: return o.afterBreak;
+        case STAMINA: return o.tired;
+        default: return o.judge > 0;
+    }
+}
+
+void tallySkills(PlayStats& s) {
+    for (int k = 0; k < NSKILL; k++) s.skObj[k] = s.skMiss[k] = 0;
+    for (auto& o : s.objs)
+        for (int k = 1; k < NSKILL; k++)
+            if (inSkill(o, (Skill)k)) s.skObj[k]++, s.skMiss[k] += o.judge == 0;
+    s.skObj[TIMING] = (int)s.err.n;
+}
+
 namespace {
 struct Press { int t; float x, y; uint8_t key; int rel; };
 }
@@ -58,6 +78,7 @@ PlayStats analyze(const Replay& r, const Beatmap& b, float stars) {
     }
     int lastT = r.frames.empty() ? -1000000 : r.frames.back().t;
 
+    s.objs.reserve(b.objs.size());
     std::vector<char> used(ps.size());
     size_t pi = 0;
     const HitObj* po = nullptr;
@@ -166,5 +187,6 @@ PlayStats analyze(const Replay& r, const Beatmap& b, float stars) {
         if (n > s.stamNotes) s.stamNotes = n, s.stamSec = sec, s.stamNps = sec > 0 ? n / sec : 0;
         i = j;
     }
+    tallySkills(s);
     return s;
 }

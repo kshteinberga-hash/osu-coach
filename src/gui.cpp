@@ -228,7 +228,8 @@ void tabReading(const Recent& rc) {
     ImGui::TextColored(kDim, "AR includes mods (HR, EZ, DT, HT). A big gap between the two rows usually means reading, not aim.");
 }
 
-void missList(const PlayStats& p) {
+void missList(const PlayStats& p, const std::vector<ObjRes>& objs) {
+    if (objs.empty()) { ImGui::TextColored(kDim, "The replay or its map is gone, so the per-note list is unavailable."); return; }
     float beat = p.bpm > 0 ? 60000 / p.bpm : 500;
     if (ImGui::BeginTable("misses", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY, {0, 260})) {
         ImGui::TableSetupScrollFreeze(0, 1);
@@ -237,8 +238,8 @@ void missList(const PlayStats& p) {
         ImGui::TableSetupColumn("Context", ImGuiTableColumnFlags_WidthFixed, 230);
         ImGui::TableSetupColumn("Why", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableHeadersRow();
-        for (size_t i = 0; i < p.objs.size(); i++) {
-            auto& o = p.objs[i];
+        for (size_t i = 0; i < objs.size(); i++) {
+            auto& o = objs[i];
             if (o.judge) continue;
             int mt = (int)(o.t * p.rate);
             float frac = o.gap / beat;
@@ -314,7 +315,7 @@ void tabPlays(App& a) {
         ImGui::TextColored(kAccent, "%s", p.title.c_str());
         ImGui::Text("%s  %s  %.2f%%  %d misses (simulated %d incl. slider heads)  UR %.0f  mean %+.1f ms  max combo %d",
                     dateStr(p.when).c_str(), modStr(p.mods).c_str(), 100 * p.acc, p.gmiss, p.sMiss, p.err.ur(), p.err.mean(), p.combo);
-        missList(p);
+        missList(p, a.selectedObjs());
         float hist[100];
         for (int k = 0; k < 100; k++) hist[k] = (float)p.hist[k];
         ImGui::PlotHistogram("##phist", hist, 100, 0, "hit errors -100..+100 ms", 0, FLT_MAX, {ImGui::GetContentRegionAvail().x, 90});
