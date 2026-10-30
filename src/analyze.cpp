@@ -76,7 +76,8 @@ PlayStats analyze(const Replay& r, const Beatmap& b, float stars) {
     float rate = r.mods & (mod::DT | mod::NC) ? 1.5f : r.mods & mod::HT ? 0.75f : 1.f;
     float preempt = (ar < 5 ? 1800 - 120 * ar : 1200 - 150 * (ar - 5)) / rate;  // approach time in real ms
     s.rate = rate, s.od = od, s.ar = preempt > 1200 ? (1800 - preempt) / 120 : 5 + (1200 - preempt) / 150, s.bpm *= rate;
-    float w300 = hitWindow300(od), w100 = hitWindow100(od), w50 = hitWindow50(od), rad = circleRadius(cs);
+    // stable judges |error| < floor(window), with whole-ms replay times (osu! wiki, lazer feature comparison)
+    float w300 = std::floor(hitWindow300(od)), w100 = std::floor(hitWindow100(od)), w50 = std::floor(hitWindow50(od)), rad = circleRadius(cs);
     bool flip = r.mods & mod::HR;
 
     // key-down edges -> presses with release times
@@ -105,11 +106,11 @@ PlayStats analyze(const Replay& r, const Beatmap& b, float stars) {
         int hitIdx = -1;
         bool early = false;
         while (pi < ps.size() && ps[pi].t < o.t - 400) pi++;
-        for (size_t j = pi; j < ps.size() && ps[j].t <= o.t + w50; j++) {
+        for (size_t j = pi; j < ps.size() && ps[j].t < o.t + w50; j++) {
             if (used[j]) continue;
             float err = (float)(ps[j].t - o.t);
             if (std::hypot(ps[j].x - o.x, ps[j].y - o.y) <= rad && std::fabs(err) <= 400) {
-                used[j] = 1, hitIdx = (int)j, early = std::fabs(err) > w50, pi = j + 1;
+                used[j] = 1, hitIdx = (int)j, early = std::fabs(err) >= w50, pi = j + 1;
                 break;
             }
         }
@@ -117,14 +118,16 @@ PlayStats analyze(const Replay& r, const Beatmap& b, float stars) {
         int near = -1;
         auto consider = [&](size_t j) {
             float d = std::fabs((float)(ps[j].t - o.t));
-            if (d <= w50 && (near < 0 || d < std::fabs((float)(ps[near].t - o.t)))) near = (int)j;
+            if (d < w50 && (near < 0 || d < std::fabs((float)(ps[near].t - o.t)))) near = (int)j;
         };
         for (size_t j = pi; j-- > 0 && ps[j].t >= o.t - w50;) consider(j);  // presses are in time order
         for (size_t j = pi; j < ps.size() && ps[j].t <= o.t + w50; j++) consider(j);
         if (hitIdx >= 0 && !early) {
             const Press& p = ps[hitIdx];
             float a = std::fabs((float)(p.t - o.t));
-            e.judge = a <= w300 ? 300 : a <= w100 ? 100 : 50;
+            // a slider head only has to be hit inside the 50 window: the slider's own score comes from following it,
+            // so a late head is not a 100 (a full-accuracy play has late heads too)
+            e.judge = o.kind == 1 || a < w300 ? 300 : a < w100 ? 100 : 50;
             e.err = (p.t - o.t) / rate, e.key = p.key, e.hold = p.rel >= 0 ? (p.rel - p.t) / rate : -1;
             e.dist = std::hypot(p.x - o.x, p.y - o.y) / rad;
         } else {

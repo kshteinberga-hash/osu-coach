@@ -40,10 +40,24 @@ static void test_aim_undershoot() {
 }
 
 static void test_timing() {
-    auto s = analyze(rep({{1000, 100, 100}, {1650, 300, 100}, {2000, 300, 300}}), map3(), 4);
+    auto s = analyze(rep({{1000, 100, 100}, {1649, 300, 100}, {2000, 300, 300}}), map3(), 4);
     CHECK(s.objs[1].judge == 50);
+    s = analyze(rep({{1000, 100, 100}, {1549, 300, 100}, {2000, 300, 300}}), map3(), 4);  // OD 5: 300 under 50 ms, 100 under 100 ms
+    CHECK(s.objs[1].judge == 300);
+    s = analyze(rep({{1000, 100, 100}, {1550, 300, 100}, {2000, 300, 300}}), map3(), 4);  // exactly 50 ms: a 100
+    CHECK(s.objs[1].judge == 100);
+    s = analyze(rep({{1000, 100, 100}, {1650, 300, 100}, {2000, 300, 300}}), map3(), 4);  // exactly on the 50 window: outside
+    CHECK(s.objs[1].judge == 0);
     s = analyze(rep({{1000, 100, 100}, {1340, 300, 100}, {2000, 300, 300}}), map3(), 4);
     CHECK(s.objs[1].judge == 0 && s.objs[1].cause == OFFTIME);
+}
+
+static void test_slider_head() {  // a late slider head is still a hit, not a 100
+    Beatmap b = map3();
+    b.objs[1].kind = 1, b.objs[1].end = 1800;
+    auto s = analyze(rep({{1000, 100, 100}, {1580, 300, 100}, {2000, 300, 300}}), b, 4);
+    CHECK(s.objs[1].judge == 300 && s.objs[1].slider);
+    NEAR(s.objs[1].err, 80, 0.01);
 }
 
 static void test_tap() {
@@ -129,6 +143,7 @@ void analyzeTests() {
     test_perfect();
     test_aim_undershoot();
     test_timing();
+    test_slider_head();
     test_tap();
     test_hr_flip();
     test_dt_rate();
