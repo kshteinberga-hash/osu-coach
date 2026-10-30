@@ -175,7 +175,9 @@ void drawPlayfield(Viewer& v, ImVec2 p, ImVec2 size) {
     int heldNow = 0;
     v.cursorAt(t, &heldNow);
 
-    // map objects, later ones first so earlier ones are drawn on top
+    // map objects in two passes, later ones first so earlier ones are drawn on top: spinners and slider bodies, then
+    // circles, slider heads and balls, so a circle that sits under a slider is never hidden by the slider's body
+    for (int pass = 0; pass < 2; pass++)
     for (int i = (int)v.map.objs.size() - 1; i >= 0; i--) {
         auto& m = v.map.objs[i];
         if (t < m.t - v.preempt || t > m.end + 200) continue;
@@ -183,6 +185,7 @@ void drawPlayfield(Viewer& v, ImVec2 p, ImVec2 size) {
         if (t > m.end) a = 1 - (float)(t - m.end) / 200;
         a = std::clamp(a, 0.f, 1.f);
         if (m.kind == 2) {
+            if (pass) continue;
             dl->AddCircle(obj(256, 192), 150 * sc, fade(cScreenRule, a), 64, S(4));
             std::string s = sf("spin %.1f s", std::max(0.0, (m.end - t) / 1000 / v.clock.rate));
             ImVec2 ts = num->CalcTextSizeA(num->FontSize, FLT_MAX, 0, s.c_str()), c = obj(256, 192);
@@ -191,16 +194,16 @@ void drawPlayfield(Viewer& v, ImVec2 p, ImVec2 size) {
         }
         ImU32 col = kCombo[v.colour[i] % 4];
         ImVec2 c = obj(m.x, m.y);
-        if (m.kind == 1 && v.paths[i].size() > 1) {
+        if (m.kind == 1 && v.paths[i].size() > 1 && pass == 0) {
             // body: stamped circles give round joins at any curve; colours are pre-blended with the screen so the
             // overlapping stamps stay even while the slider fades
             auto& path = v.paths[i];
             float rim = std::max(S(2), r * 0.11f);
             int step = std::max(1, (int)(r * 0.3f / (4 * sc)));  // path points are ~4 osu! px apart
             ImU32 edge = mix(cScreen, cWin, a), body = mix(cScreen, mix(col, cScreen, 0.62f), a);
-            for (int pass = 0; pass < 2; pass++)
+            for (int layer = 0; layer < 2; layer++)  // white edge, then the body inside it
                 for (size_t k = 0;; k = std::min(k + step, path.size() - 1)) {  // every step-th point, always the last
-                    dl->AddCircleFilled(obj(path[k].first, path[k].second), pass ? r - rim : r, pass ? body : edge, 32);
+                    dl->AddCircleFilled(obj(path[k].first, path[k].second), layer ? r - rim : r, layer ? body : edge, 32);
                     if (k == path.size() - 1) break;
                 }
             ImVec2 end = obj(path.back().first, path.back().second), head = c;
@@ -212,6 +215,11 @@ void drawPlayfield(Viewer& v, ImVec2 p, ImVec2 size) {
                 auto& nb = atEnd ? path[path.size() > 4 ? path.size() - 5 : 0] : path[std::min<size_t>(4, path.size() - 1)];
                 reverseArrow(dl, from, obj(nb.first, nb.second), r, fade(cWin, a));
             }
+            continue;
+        }
+        if (pass == 0) continue;
+        if (m.kind == 1 && v.paths[i].size() > 1) {
+            auto& path = v.paths[i];
             if (t >= m.t && t <= m.end) {  // ball, and the follow circle while a key is held
                 auto b = sliderBall(m, path, (int)t);
                 ImVec2 bc = obj(b.first, b.second);

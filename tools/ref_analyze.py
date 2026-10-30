@@ -73,7 +73,8 @@ def simulate(rep, bm):
     if mods & HR: od = min(10, od * 1.4); cs = min(10, cs * 1.3)
     if mods & EZ: od *= 0.5; cs *= 0.5
     rate = 1.5 if mods & (DT | NC) else 0.75 if mods & HT else 1.0
-    w300, w100, w50 = 80 - 6 * od, 140 - 8 * od, 200 - 10 * od
+    # stable judges |error| < floor(window), with whole-ms replay times
+    w300, w100, w50 = math.floor(80 - 6 * od), math.floor(140 - 8 * od), math.floor(200 - 10 * od)
     rad = 54.4 - 4.48 * cs
     flip = bool(mods & HR)
     frames = rep["frames"]
@@ -99,14 +100,14 @@ def simulate(rep, bm):
         # earliest press within window; stable notelock: presses before previous object's judgement are consumed
         while pi < len(presses) and presses[pi][0] < o["t"] - 400: pi += 1
         j = pi
-        while j < len(presses) and presses[j][0] <= o["t"] + w50:
+        while j < len(presses) and presses[j][0] < o["t"] + w50:
             if not used[j]:
                 pt, px, py, key, rel = presses[j]
                 dist = math.hypot(px - o["x"], py - o["y"])
                 err = pt - o["t"]
                 if dist <= rad * 1.0 and abs(err) <= 400:
                     used[j] = True
-                    if abs(err) <= w50:
+                    if abs(err) < w50:
                         hit = dict(err=err / rate, key=key, hold=(rel - pt) / rate if rel else None, dist=dist / rad)
                     else:
                         hit = dict(err=err / rate, key=key, early_miss=True, dist=dist / rad)
@@ -117,11 +118,12 @@ def simulate(rep, bm):
         near = None
         for pt, px, py, key, rel in presses[max(0, pi - 5):pi + 5]:
             e = pt - o["t"]
-            if abs(e) <= w50 and (near is None or abs(e) < abs(near[0])):
+            if abs(e) < w50 and (near is None or abs(e) < abs(near[0])):
                 near = (e / rate, math.hypot(px - o["x"], py - o["y"]) / rad)
         if hit and not hit.get("early_miss"):
             a = abs(hit["err"] * rate)
-            j_ = 300 if a <= w300 else 100 if a <= w100 else 50
+            # a slider head only has to be hit inside the 50 window; the slider's score comes from following it
+            j_ = 300 if o["k"] == "s" or a < w300 else 100 if a < w100 else 50
         else:
             j_ = 0
         res.append(dict(i=idx, t=o["t"], k=o["k"], x=o["x"], y=o["y"], nc=o["nc"], j=j_, hit=hit, near=near))
