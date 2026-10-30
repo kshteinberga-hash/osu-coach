@@ -15,8 +15,16 @@ inline float hitWindow300(float od) { return 80 - 6 * od; }
 inline float hitWindow100(float od) { return 140 - 8 * od; }
 inline float hitWindow50(float od) { return 200 - 10 * od; }
 
-struct HitObj { float x, y; int t, end; uint8_t kind; bool nc; };  // kind: 0 circle, 1 slider, 2 spinner
-struct Beatmap { float ar, cs, od, hp, bpm; int bid; std::string title; std::vector<HitObj> objs; };
+struct HitObj {  // kind: 0 circle, 1 slider, 2 spinner
+    float x, y; int t, end; uint8_t kind; bool nc;
+    char curve = 'B'; int slides = 1; float length = 0;  // slider only: curve type L/P/B/C, repeats, pixel length
+    std::vector<std::pair<float, float>> pts;               // slider control points after the head
+};
+struct Beatmap { float ar, cs, od, hp, bpm; int bid; std::string title; std::vector<HitObj> objs; std::string audioFile; };
+// Slider body in osu! pixels: head first, ~4 px steps, cut or extended to o.length.
+std::vector<std::pair<float, float>> sliderPath(const HitObj& o);
+// Slider ball position at map time t (bounces on repeats).
+std::pair<float, float> sliderBall(const HitObj& o, const std::vector<std::pair<float, float>>& path, int t);
 
 bool parseOsu(std::string_view text, Beatmap& out);   // false if not std mode
 bool loadOsu(const std::wstring& path, Beatmap& out);

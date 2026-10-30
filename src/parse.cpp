@@ -1,6 +1,7 @@
 #include "parse.h"
 #include <algorithm>
 #include <charconv>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -72,7 +73,18 @@ bool parseOsu(std::string_view text, Beatmap& b) {
             if (n < 4) continue;
             int type = (int)num(f[3]);
             HitObj o{(float)num(f[0]), (float)num(f[1]), (int)num(f[2]), (int)num(f[2]), 0, (type & 4) != 0};
-            if (type & 2) o.kind = 1, sliders.push_back({b.objs.size(), n >= 8 ? num(f[7]) : 0, n >= 7 ? num(f[6]) : 1});
+            if (type & 2) {
+                o.kind = 1;
+                for (std::string_view c = n >= 6 ? f[5] : std::string_view{}; !c.empty();) {  // "B|x:y|x:y"
+                    size_t q = c.find('|');
+                    std::string_view tok = c.substr(0, q);
+                    c.remove_prefix(q == std::string_view::npos ? c.size() : q + 1);
+                    if (size_t k = tok.find(':'); k != std::string_view::npos) o.pts.push_back({(float)num(tok.substr(0, k)), (float)num(tok.substr(k + 1))});
+                    else if (tok.size() == 1) o.curve = tok[0];
+                }
+                o.slides = n >= 7 ? std::max(1, (int)num(f[6])) : 1, o.length = n >= 8 ? (float)num(f[7]) : 0;
+                sliders.push_back({b.objs.size(), n >= 8 ? num(f[7]) : 0, n >= 7 ? num(f[6]) : 1});
+            }
             else if (type & 8) o.kind = 2, o.end = n >= 6 ? (int)num(f[5]) : o.t;
             else if (!(type & 1)) continue;
             b.objs.push_back(o);
@@ -81,6 +93,7 @@ bool parseOsu(std::string_view text, Beatmap& b) {
             if (c == std::string_view::npos) continue;
             std::string_view k = trim(line.substr(0, c)), v = trim(line.substr(c + 1));
             if (k == "Mode" && num(v) != 0) return false;
+            else if (k == "AudioFilename") b.audioFile = std::string(v);
             else if (k == "Title") title = v;
             else if (k == "Artist") artist = v;
             else if (k == "Version") version = v;
@@ -115,6 +128,108 @@ bool parseOsu(std::string_view text, Beatmap& b) {
         o.end = o.t + (int)(s.len / (sm * 100 * sv) * beat * s.slides + 0.5);
     }
     return true;
+}
+
+// ---- slider curves ----
+namespace {
+using Pt = std::pair<float, float>;
+Pt lerp(Pt a, Pt b, float t) { return {a.first + (b.first - a.first) * t, a.second + (b.second - a.second) * t}; }
+float dist(Pt a, Pt b) { return std::hypot(b.first - a.first, b.second - a.second); }
+int stepsFor(const std::vector<Pt>& c) {  // ~4 px per step along the control polygon
+    float l = 0;
+    for (size_t i = 1; i < c.size(); i++) l += dist(c[i - 1], c[i]);
+    return std::clamp((int)(l / 4), 8, 256);
+}
+void bezier(const std::vector<Pt>& c, std::vector<Pt>& out) {  // de Casteljau
+    if (c.size() < 3) { out.insert(out.end(), c.begin(), c.end()); return; }
+    int steps = stepsFor(c);
+    std::vector<Pt> w(c.size());
+    for (int s = 0; s <= steps; s++) {
+        w = c;
+        for (size_t k = c.size() - 1; k > 0; k--)
+            for (size_t i = 0; i < k; i++) w[i] = lerp(w[i], w[i + 1], (float)s / steps);
+        out.push_back(w[0]);
+    }
+}
+void catmull(const std::vector<Pt>& c, std::vector<Pt>& out) {
+    for (size_t i = 0; i + 1 < c.size(); i++) {
+        Pt p0 = c[i ? i - 1 : 0], p1 = c[i], p2 = c[i + 1], p3 = c[std::min(i + 2, c.size() - 1)];
+        int steps = std::clamp((int)(dist(p1, p2) / 4), 4, 64);
+        for (int s = i ? 1 : 0; s <= steps; s++) {
+            float t = (float)s / steps, t2 = t * t, t3 = t2 * t;
+            auto f = [&](float a, float b, float c2, float d) { return 0.5f * (2 * b + (-a + c2) * t + (2 * a - 5 * b + 4 * c2 - d) * t2 + (-a + 3 * b - 3 * c2 + d) * t3); };
+            out.push_back({f(p0.first, p1.first, p2.first, p3.first), f(p0.second, p1.second, p2.second, p3.second)});
+        }
+    }
+}
+bool arc(const std::vector<Pt>& c, std::vector<Pt>& out) {  // circle through 3 points; false if collinear
+    if (c.size() != 3) return false;
+    auto [ax, ay] = c[0]; auto [bx, by] = c[1]; auto [cx, cy] = c[2];
+    float d = 2 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by));
+    if (std::fabs(d) < 1e-3f) return false;
+    float a2 = ax * ax + ay * ay, b2 = bx * bx + by * by, c2 = cx * cx + cy * cy;
+    float ux = (a2 * (by - cy) + b2 * (cy - ay) + c2 * (ay - by)) / d, uy = (a2 * (cx - bx) + b2 * (ax - cx) + c2 * (bx - ax)) / d;
+    float r = std::hypot(ax - ux, ay - uy), ta = std::atan2(ay - uy, ax - ux), tb = std::atan2(by - uy, bx - ux), tc = std::atan2(cy - uy, cx - ux);
+    const float TAU = 6.2831853f;
+    auto ahead = [&](float from, float to, float dir) { float x = (to - from) * dir; while (x < 0) x += TAU; while (x >= TAU) x -= TAU; return x; };
+    float dir = ahead(ta, tb, 1) < ahead(ta, tc, 1) ? 1.f : -1.f;  // go the way that passes the middle point
+    float sweep = ahead(ta, tc, dir);
+    int steps = std::clamp((int)(r * sweep / 4), 8, 256);
+    for (int s = 0; s <= steps; s++) {
+        float t = ta + dir * sweep * s / steps;
+        out.push_back({ux + r * std::cos(t), uy + r * std::sin(t)});
+    }
+    return true;
+}
+}
+
+std::vector<std::pair<float, float>> sliderPath(const HitObj& o) {
+    std::vector<Pt> c{{o.x, o.y}}, raw;
+    c.insert(c.end(), o.pts.begin(), o.pts.end());
+    if (o.curve == 'L') raw = c;
+    else if (o.curve == 'C') catmull(c, raw);
+    else if (o.curve != 'P' || !arc(c, raw)) {  // B, unknown letters and degenerate arcs: bezier, split at repeated (red) points
+        std::vector<Pt> seg{c[0]};
+        for (size_t i = 1; i < c.size(); i++) {
+            if (c[i] == c[i - 1]) { bezier(seg, raw), seg = {c[i]}; continue; }
+            seg.push_back(c[i]);
+        }
+        bezier(seg, raw);
+    }
+    // resample every 4 px along the raw path, cut or extended (along the last direction) to o.length
+    std::vector<float> cum{0};
+    for (size_t i = 1; i < raw.size(); i++) cum.push_back(cum.back() + dist(raw[i - 1], raw[i]));
+    float total = cum.back(), len = o.length > 0 ? o.length : total;
+    if (raw.size() < 2 || total <= 0) return {c[0]};
+    size_t last = raw.size() - 1;
+    while (last > 0 && dist(raw[last - 1], raw[last]) <= 0) last--;
+    auto at = [&](float d) -> Pt {
+        if (d >= total) {
+            Pt a = raw[last ? last - 1 : 0], b = raw[last];
+            float sl = std::max(dist(a, b), 1e-6f);
+            return {b.first + (b.first - a.first) / sl * (d - total), b.second + (b.second - a.second) / sl * (d - total)};
+        }
+        size_t i = std::upper_bound(cum.begin(), cum.end(), d) - cum.begin();
+        float sl = cum[i] - cum[i - 1];
+        return lerp(raw[i - 1], raw[i], sl > 0 ? (d - cum[i - 1]) / sl : 0);
+    };
+    std::vector<Pt> out;
+    for (float d = 0; d < len; d += 4) out.push_back(at(d));
+    out.push_back(at(len));
+    return out;
+}
+
+std::pair<float, float> sliderBall(const HitObj& o, const std::vector<std::pair<float, float>>& path, int t) {
+    if (path.size() < 2) return path.empty() ? Pt{o.x, o.y} : path[0];
+    float dur = (float)(o.end - o.t) / o.slides;
+    if (dur <= 0) return path[0];
+    float p = std::clamp((t - o.t) / dur, 0.f, (float)o.slides);
+    int k = std::min((int)p, o.slides - 1);
+    float f = p - k;
+    if (k % 2) f = 1 - f;
+    float idx = f * (path.size() - 1);
+    size_t i = std::min((size_t)idx, path.size() - 2);
+    return lerp(path[i], path[i + 1], idx - i);
 }
 
 bool loadOsu(const std::wstring& path, Beatmap& out) {
