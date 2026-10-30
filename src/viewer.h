@@ -1,4 +1,5 @@
 #pragma once
+#include <array>
 #include "analyze.h"
 #include "audio.h"
 #include "playback.h"
@@ -17,6 +18,15 @@ struct Viewer {
     struct Press { int t; float x, y; int key; };
     std::vector<Press> presses;                              // key-down events in map time
     std::vector<int> miss;                                   // indexes into objs of the coach's stops
+    struct Hold { int t0, t1; int lane; };                   // a key held from t0 to t1 (map time); lane 0 K1, 1 K2, 2 M1, 3 M2
+    std::vector<Hold> holds;                                 // by start time
+    int longestHold = 0;
+    std::vector<int> lanes;                                  // the lanes this replay uses (K1 and K2 when nothing is pressed)
+    std::vector<int> colour;                                 // combo colour index per map object
+    std::vector<int> objOf;                                  // map object -> index in objs, -1 for spinners
+    std::vector<std::array<int, 4>> judged;                  // judged[k] = 300s, 100s, 50s, misses among objs[0..k]
+    Acc hitErr;                                              // hit errors of the whole play (real ms)
+    float laneMs = 3000;                                     // width of the key lanes, in map ms (mouse wheel zooms)
     Clock clock;
     Stops stops;
     Audio audio;
@@ -35,4 +45,5 @@ struct Viewer {
     void rebuildStops();
     void tick(double realMs);      // advance the clock (audio-driven when the song plays) and fire coach stops
     std::pair<float, float> cursorAt(double t, int* keys = nullptr) const;
+    int judgedBefore(double t) const;  // number of objs whose time is <= t
 };

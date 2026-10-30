@@ -30,8 +30,19 @@ static void test_hr_draw_y() {
     NEAR(drawY(100, false), 100, 0);
 }
 
+static void test_lane_bits() {
+    CHECK(laneBits(0) == 0);
+    CHECK(laneBits(5) == 1);      // K1 (sets M1 too)
+    CHECK(laneBits(10) == 2);     // K2
+    CHECK(laneBits(1) == 4);      // M1 alone
+    CHECK(laneBits(2) == 8);      // M2 alone
+    CHECK(laneBits(15) == 3);     // both keys
+    CHECK(laneBits(5 | 2) == 9);  // K1 + M2
+}
+
 void viewerTests() {
     test_clock_rate();
     test_stops_seek();
     test_hr_draw_y();
+    test_lane_bits();
 }

@@ -855,7 +855,7 @@ void setupStyle(float dpi) {
     ImFontGlyphRangesBuilder b;
     b.AddRanges(io.Fonts->GetGlyphRangesDefault());
     b.AddRanges(io.Fonts->GetGlyphRangesCyrillic());
-    b.AddText("\xE2\x80\x94\xE2\x80\x93\xE2\x80\xA6\xC2\xB7\xC2\xB1\xC3\x97");  // — – … · ± ×
+    b.AddText("\xE2\x80\x94\xE2\x80\x93\xE2\x80\xA6\xC2\xB7\xC2\xB1\xC3\x97\xE2\x88\x92");  // — – … · ± × −
     b.BuildRanges(&ranges);
     wchar_t win[MAX_PATH];
     GetWindowsDirectoryW(win, MAX_PATH);

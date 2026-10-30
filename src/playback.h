@@ -17,3 +17,8 @@ struct Stops {  // coach stops at mistake times (map ms, ascending)
 };
 
 inline float drawY(float y, bool hr) { return hr ? 384 - y : y; }  // objects only: HR replay frames are already flipped
+
+// Keys held in a replay frame as bits: 1 K1, 2 K2, 4 M1, 8 M2. Replays set M1 together with K1 (5) and M2 with K2 (10).
+inline int laneBits(int keys) {
+    return (keys & 4 ? 1 : 0) | (keys & 8 ? 2 : 0) | ((keys & 1) && !(keys & 4) ? 4 : 0) | ((keys & 2) && !(keys & 8) ? 8 : 0);
+}
