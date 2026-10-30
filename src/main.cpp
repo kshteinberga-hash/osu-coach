@@ -259,6 +259,11 @@ int wmain(int argc, wchar_t** argv) {
         idle = any ? 0 : idle + 1;
         if (app.busy && !any) Sleep(30);  // progress bar refresh while scanning
         app.poll();
+        if (IsIconic(hwnd) && shotDir.empty()) {  // minimized: 0x0 client area, nothing to draw (layout would go negative)
+            if (app.viewing && app.viewer) app.viewer->setPlaying(false);
+            idle = 3;
+            continue;
+        }
         if (gResizeW) {
             if (gRtv) gRtv->Release(), gRtv = nullptr;
             gSwap->ResizeBuffers(0, gResizeW, gResizeH, DXGI_FORMAT_UNKNOWN, 0);
