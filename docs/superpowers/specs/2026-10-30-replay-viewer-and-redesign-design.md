@@ -167,7 +167,7 @@ The Plays tab's miss list uses the same `explainMiss()` titles, so wording is co
 **Slider paths:** `parse.cpp` keeps each slider's curve.
 - `HitObj` gains `curveType` (L/P/B/C), control points, `slides` and `pixelLength`.
 - `Beatmap` gains `audioFile`.
-- `std::vector<ImVec2>`-free API: `std::vector<std::pair<float, float>> sliderPath(const HitObj&)` returns points every ~4 osu! px, trimmed or extended to `pixelLength`:
+- `std::vector<std::pair<float, float>> sliderPath(const HitObj&)` (no ImGui types in the parser) returns points every ~4 osu! px, trimmed or extended to `pixelLength`:
   - **L:** straight segments
   - **P:** a circular arc through the three points; falls back to bezier when they are collinear
   - **B:** bezier, split into segments at repeated (red) anchor points
