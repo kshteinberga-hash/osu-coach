@@ -305,7 +305,7 @@ std::vector<Suggestion> suggest(const std::vector<DbMap>& db, const std::vector<
         }
         int n = recent.count(m->md5) ? recent[m->md5] : 0;
         sc *= n <= 3 ? 1.2f : n > 10 ? 0.5f : 1.f;
-        why += fmt(", %.2f\xE2\x98\x85, %d plays in the last 30 days", stars, n);
+        why += fmt(", %.2f\xE2\x98\x85, %d play%s in the last 30 days", stars, n, n == 1 ? "" : "s");
         if (sc > 0) out.push_back({m, stars, sc, why});
     }
     std::sort(out.begin(), out.end(), [](auto& a, auto& b) { return a.score > b.score; });

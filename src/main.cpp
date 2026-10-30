@@ -156,25 +156,6 @@ static LRESULT WINAPI wndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
     return DefWindowProcW(h, m, w, l);
 }
 
-static void loadFonts(float dpi) {
-    ImGuiIO& io = ImGui::GetIO();
-    static ImVector<ImWchar> ranges;
-    ImFontGlyphRangesBuilder b;
-    b.AddRanges(io.Fonts->GetGlyphRangesDefault());
-    b.AddRanges(io.Fonts->GetGlyphRangesCyrillic());
-    b.AddText("\xE2\x98\x85\xE2\x80\x94\xE2\x86\x91\xE2\x86\x93\xE2\x80\xA6");  // ★ — ↑ ↓ …
-    b.BuildRanges(&ranges);
-    wchar_t win[MAX_PATH];
-    GetWindowsDirectoryW(win, MAX_PATH);
-    std::string font = narrow(std::wstring(win) + L"\\Fonts\\segoeui.ttf"), sym = narrow(std::wstring(win) + L"\\Fonts\\seguisym.ttf");
-    if (!io.Fonts->AddFontFromFileTTF(font.c_str(), 18 * dpi, nullptr, ranges.Data)) { io.Fonts->AddFontDefault(); return; }
-    ImFontConfig mc;
-    mc.MergeMode = true;
-    static const ImWchar star[] = {0x2605, 0x2605, 0};
-    io.Fonts->AddFontFromFileTTF(sym.c_str(), 18 * dpi, &mc, star);
-    io.Fonts->AddFontFromFileTTF(font.c_str(), 30 * dpi, nullptr, ranges.Data);  // headline font
-    io.Fonts->AddFontFromFileTTF(sym.c_str(), 30 * dpi, &mc, star);
-}
 
 static int dumpMode(int argc, wchar_t** argv) {
     if (AttachConsole(ATTACH_PARENT_PROCESS)) freopen("CONOUT$", "w", stdout);
@@ -210,11 +191,7 @@ int wmain(int argc, wchar_t** argv) {
 
     ImGui::CreateContext();
     ImGui::GetIO().IniFilename = nullptr;
-    ImGui::StyleColorsDark();
-    ImGuiStyle& st = ImGui::GetStyle();
-    st.FrameRounding = st.WindowRounding = st.TabRounding = 4, st.WindowPadding = {14, 12};
-    st.ScaleAllSizes(dpi);
-    loadFonts(dpi);
+    setupStyle(dpi);
     ImGui_ImplWin32_Init(hwnd);
     ImGui_ImplDX11_Init(gDev, gCtx);
 
@@ -257,7 +234,7 @@ int wmain(int argc, wchar_t** argv) {
         ImGui::NewFrame();
         drawApp(app);
         ImGui::Render();
-        const float clear[4] = {0.07f, 0.07f, 0.09f, 1};
+        const float clear[4] = {14 / 255.f, 11 / 255.f, 22 / 255.f, 1};
         gCtx->OMSetRenderTargets(1, &gRtv, nullptr);
         gCtx->ClearRenderTargetView(gRtv, clear);
         ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());

@@ -30,4 +30,5 @@ struct App {
     void poll();
 };
 void drawApp(App& a);
+void setupStyle(float dpi);  // fonts, colours and the 8 px spacing grid
 extern int gForceTab;  // >= 0 selects that tab on the next frame (used by --screenshot)
