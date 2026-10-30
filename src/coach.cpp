@@ -12,8 +12,8 @@
 #include <windows.h>
 
 const char* const kSkillName[NSKILL] = {"Timing", "Jumps", "Big jumps", "Streams", "Speed", "Reading", "Stamina"};
-static const char* const kLabel[NSKILL] = {"", "jump notes (4-7 radii)", "big jumps (over 7 radii)", "stream notes",
-                                           "fast notes (gaps under 130 ms)", "first notes after a break", "notes late in long runs"};
+static const char* const kLabel[NSKILL] = {"", "jumps (2 to 3.5 circle widths)", "big jumps (over 3.5 circle widths)", "stream notes",
+                                           "fast notes (less than 130 ms apart)", "first notes after a pause", "notes near the end of long runs"};
 static constexpr int64_t DAY_MS = 86400000LL;
 
 int ymd(int64_t ms) {
@@ -167,35 +167,35 @@ Report coach(const std::vector<PlayStats>& plays, std::vector<Day>& hist, int64_
         if (cost <= 0.05) continue;
         Weakness w{(Skill)s, cost, "", ""};
         if (s == TIMING) {
-            w.metric = fmt("Your UR is %.0f (mean %+.1f ms); your best week was %.0f.", recentErr.ur(), recentErr.mean(), bestUr);
+            w.metric = fmt("Your timing steadiness (UR) is %.0f; in your best week it was %.0f. Lower is steadier.", recentErr.ur(), bestUr);
             w.fix = std::fabs(recentErr.mean()) > 5
-                ? fmt("You hit %.0f ms %s on average: tap a little %s, or adjust your offset.", std::fabs(recentErr.mean()),
+                ? fmt("You click %.0f ms too %s on average: tap a little %s, or change your offset in the settings.", std::fabs(recentErr.mean()),
                       recentErr.mean() < 0 ? "early" : "late", recentErr.mean() < 0 ? "later" : "earlier")
-                : "Play OD 8+ maps around 3.5\xE2\x98\x85 for 10 min/day and keep a steady rhythm; accuracy comes from consistency, not speed.";
+                : "Play maps with strict timing (OD 8 or more) around 3.5\xE2\x98\x85 for 10 minutes a day. Tap to the music, not to what you see.";
         } else {
             w.metric = r.needHistory
-                ? fmt("You miss %.1f%% of %s in recent plays (%.0f of %.0f).", 100 * r.actual[s], kLabel[s], act.miss[s], act.obj[s])
-                : fmt("You miss %.1f%% of %s; your usual at this star rating is %.1f%%.", 100 * r.actual[s], kLabel[s], 100 * r.expected[s]);
+                ? fmt("You miss %.1f%% of %s (%.0f of %.0f lately).", 100 * r.actual[s], kLabel[s], act.miss[s], act.obj[s])
+                : fmt("You miss %.1f%% of %s. Normally at this star rating you miss %.1f%%.", 100 * r.actual[s], kLabel[s], 100 * r.expected[s]);
             double ov = sig[3] ? 100.0 * sig[2] / sig[3] : 0, j = sig[6] + sig[7] ? 100.0 * sig[6] / (sig[6] + sig[7]) : 50;
             double alt = sig[4] + sig[5] ? 100.0 * sig[4] / (sig[4] + sig[5]) : 100, late = lateN ? lateSum / lateN : 0;
             switch (s) {
                 case JUMPS: case BIGJUMPS:
                     w.fix = sig[0] >= sig[1]
-                        ? fmt("Most aim misses are undershoots (%d vs %d overshoots): push through to the centre of the note. Practise jump maps at AR 9, 10 min/day, and pre-aim the first note of each jump.", sig[0], sig[1])
-                        : fmt("Most aim misses are overshoots (%d vs %d undershoots): slow down at the end of the jump and stop on the note.", sig[1], sig[0]);
+                        ? fmt("You usually stop short of the circle (%d times, against %d times going past it). Move all the way to the centre. Practise jump maps for 10 minutes a day.", sig[0], sig[1])
+                        : fmt("You usually go past the circle (%d times, against %d times stopping short). Slow down at the end of each jump and stop on the circle.", sig[1], sig[0]);
                     break;
                 case STREAMS:
-                    w.fix = late < -8 ? fmt("You rush long streams (notes 5+ land %.0f ms early): tap slightly later and follow the music, not your fingers.", -late)
-                          : alt < 60 ? fmt("Only %.0f%% of stream notes alternate: alternate every note, starting with J.", alt)
-                                     : std::string("Practise streams 10 BPM below your limit until you FC them, then raise the BPM by 5.");
+                    w.fix = late < -8 ? fmt("You speed up in long streams (later notes come %.0f ms too early). Tap a little slower and follow the music, not your fingers.", -late)
+                          : alt < 60 ? fmt("You switch fingers on only %.0f%% of stream notes. Switch on every note: J, K, J, K.", alt)
+                                     : std::string("Practise streams a little slower than your limit until you full-combo them, then go 5 BPM faster.");
                     break;
                 case SPEED:
-                    w.fix = ov > 20 ? fmt("Finger lock: %.0f%% of fast presses are held into the next one. Alternate everything, start on J, and practise 1/2 at 120 ms gaps.", ov)
-                          : j < 35 || j > 65 ? fmt("You tap %.0f%% with %s: alternate 1/2 patterns too, so both fingers stay warm.", std::max(j, 100 - j), j < 35 ? "K" : "J")
-                                             : std::string("Practise short bursts slightly above your comfortable speed, then go back to full maps.");
+                    w.fix = ov > 20 ? fmt("Finger lock: on %.0f%% of fast notes you still hold the last key when you press the next one. Let go quickly and switch fingers on every note.", ov)
+                          : j < 35 || j > 65 ? fmt("%.0f%% of your taps are on %s. Use both fingers, even on slower notes, so both stay warmed up.", std::max(j, 100 - j), j < 35 ? "K" : "J")
+                                             : std::string("Practise short fast bursts a bit above your comfortable speed, then go back to full maps.");
                     break;
-                case READING: w.fix = "You lose the first note after breaks: keep your eyes on the playfield during breaks and practise AR 8.5-9 reading maps with rhythm changes."; break;
-                default: w.fix = "Misses rise late in long runs: play longer stream maps at a comfortable BPM to build stamina, and relax your hand between bursts."; break;
+                case READING: w.fix = "You miss the first note after a pause. Keep your eyes on the screen during pauses, and play maps where circles appear quickly (AR 8.5 to 9)."; break;
+                default: w.fix = "You miss more near the end of long runs: your hand gets tired. Play longer stream maps at a speed you can manage, and relax your hand between bursts."; break;
             }
         }
         ws.push_back(std::move(w));
@@ -233,6 +233,44 @@ Report coach(const std::vector<PlayStats>& plays, std::vector<Day>& hist, int64_
     else if (best >= 0 && r.trend[0] != -1) r.tier = best / 2.f, r.verdict = fmt("Ready to push to %.1f\xE2\x98\x85", r.tier + 0.5f);
     else r.tier = (best >= 0 ? best : most) / 2.f, r.verdict = fmt("Still grinding %.1f\xE2\x98\x85 \xE2\x80\x94 focus on %s", r.tier, focus);
     return r;
+}
+
+Explain explainMiss(const ObjRes& o, float beatMs) {
+    std::string where = o.inStream ? " in the middle of a stream" : o.afterBreak ? " right after a pause" : "";
+    if (o.slider) where += " on the start of a slider";
+    const char* side = o.err < 0 ? "early" : "late";
+    if (o.judge == 50)
+        return {o.err < 0 ? "50: early" : "50: late", fmt("You hit it, but %.0f ms %s, so it only counted as a 50%s.", std::fabs(o.err), side, where.c_str()),
+                "Keep a steady rhythm: listen to the beat instead of watching the circles."};
+    switch (o.cause) {
+        case AIM: {
+            std::string t = fmt("You clicked on time (%.0f ms %s), but your cursor was %.1f circle widths from the centre. ", std::fabs(o.err), side, o.dist / 2);
+            t += o.along < 0 ? "You stopped short of it." : o.along > 0 ? "You went past it." : "You were off to the side.";
+            if (o.spacing > 4) t += fmt(" This was a jump of %.1f circle widths", o.spacing / 2) + where + ".";
+            else if (!where.empty()) t += " This happened" + where + ".";
+            return {"Missed: aim", t,
+                    o.along < 0 ? "Move all the way to the centre of the circle; don't slow down before you arrive."
+                    : o.along > 0 ? "Slow down at the end of the move and stop on the circle."
+                                  : "Watch the circle, not your cursor."};
+        }
+        case TAP:
+            return {"Missed: one press for two notes", "You pressed once for two notes: that press counted for the note before, so this one got nothing" + where + ".",
+                    "Tap every note. In fast notes, switch fingers on each one."};
+        case OFFTIME:
+            return {"Missed: too early", fmt("You clicked %.0f ms too early, before this note could be hit%s.", std::fabs(o.err), where.c_str()),
+                    "Wait for the approach circle to touch the circle, and follow the music, not your fingers."};
+        default:
+            return {"Missed: no click", "You didn't click anywhere near this note" + where + ".",
+                    "Keep tapping to the rhythm even when you're lost: a guess can still hit."};
+    }
+    (void)beatMs;
+}
+
+std::vector<int> mistakes(const std::vector<ObjRes>& objs, bool with50s) {
+    std::vector<int> v;
+    for (size_t i = 0; i < objs.size(); i++)
+        if (objs[i].judge == 0 || (with50s && objs[i].judge == 50)) v.push_back((int)i);
+    return v;
 }
 
 MapFeat features(const Beatmap& b) {

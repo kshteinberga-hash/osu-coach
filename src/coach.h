@@ -23,6 +23,10 @@ struct Report {
 int ymd(int64_t unixMs);  // local date as yyyymmdd
 double ppEstimate(float stars, float od, int nobj, float acc, int misses);
 Report coach(const std::vector<PlayStats>& plays, std::vector<Day>& history, int64_t nowMs);
+// Plain-English account of one miss (judge 0) or 50, for the replay viewer and the miss list.
+struct Explain { std::string title, text, tip; };
+Explain explainMiss(const ObjRes& o, float beatMs);
+std::vector<int> mistakes(const std::vector<ObjRes>& objs, bool with50s);  // indexes of misses (and 50s), in time order
 struct MapFeat { float jump, stream, rhythm, slider, ar, od, bpm; int longRun; };
 MapFeat features(const Beatmap& b);
 void cacheFeatures(const std::string& md5, const MapFeat& f);

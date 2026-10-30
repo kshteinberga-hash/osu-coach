@@ -166,7 +166,44 @@ static void test_suggest() {
     if (s.size() == 2) CHECK(s[0].map == &db[1] && s[1].map == &db[0] && !s[0].why.empty());
 }
 
+static bool has(const std::string& s, const char* w) { return s.find(w) != std::string::npos; }
+
+static ObjRes miss(uint8_t cause, float err = 0, float dist = 0, float spacing = 0, int8_t along = 0) {
+    ObjRes o{};
+    o.cause = cause, o.err = err, o.dist = dist, o.spacing = spacing, o.along = along, o.gap = 300;
+    return o;
+}
+
+static void test_explain() {
+    Explain e = explainMiss(miss(AIM, 20, 2.4f, 9, -1), 500);
+    CHECK(e.title == "Missed: aim");
+    CHECK(has(e.text, "stopped short") && has(e.text, "1.2 circle widths") && has(e.text, "jump of 4.5 circle widths"));
+    CHECK(has(e.tip, "all the way to the centre"));
+    CHECK(has(explainMiss(miss(AIM, 0, 2, 9, 1), 500).text, "went past"));
+    CHECK(has(explainMiss(miss(AIM, 0, 2, 1, 0), 500).text, "off to the side"));
+    CHECK(has(explainMiss(miss(TAP), 500).text, "pressed once for two notes"));
+    CHECK(has(explainMiss(miss(OFFTIME, -160), 500).text, "160 ms too early"));
+    CHECK(has(explainMiss(miss(NOPRESS), 500).text, "didn't click"));
+    ObjRes f = miss(HIT, 70);
+    f.judge = 50;
+    CHECK(explainMiss(f, 500).title == "50: late");
+    f.err = -70;
+    CHECK(explainMiss(f, 500).title == "50: early");
+    ObjRes s = miss(AIM, 0, 3, 2, -1);
+    s.inStream = true;
+    CHECK(has(explainMiss(s, 500).text, "in the middle of a stream"));
+}
+
+static void test_mistakes() {
+    std::vector<ObjRes> v(4);
+    v[0].judge = 300, v[1].judge = 0, v[2].judge = 50, v[3].judge = 0;
+    CHECK((mistakes(v, false) == std::vector<int>{1, 3}));
+    CHECK((mistakes(v, true) == std::vector<int>{1, 2, 3}));
+}
+
 void coachTests() {
+    test_explain();
+    test_mistakes();
     test_features();
     test_suggest();
     test_pp();
