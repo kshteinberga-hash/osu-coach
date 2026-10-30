@@ -62,6 +62,78 @@ std::string fmt(const char* f, ...) {
 }
 }
 
+// Habits seen across plays, from common osu! community advice: retrying one map over and over, playing maps that are too
+// hard, getting worse late in long sessions, and starting cold. Each needs enough plays to be sure; at most 3, worst first.
+std::vector<Habit> habits(const std::vector<PlayStats>& plays, size_t from, int64_t now) {
+    std::vector<std::pair<double, Habit>> out;
+    size_t n = plays.size() - from;
+    // retrying: the longest run of the same map back to back
+    if (n >= 10) {
+        size_t best = 0, at = from, run = 0;
+        int inStreaks = 0;
+        for (size_t i = from; i < plays.size(); i++) {
+            run = i > from && plays[i].md5 == plays[i - 1].md5 ? run + 1 : 1;
+            if (run > best) best = run, at = i;
+            if (i + 1 == plays.size() || plays[i + 1].md5 != plays[i].md5)
+                if (run > 3) inStreaks += (int)run;
+        }
+        if (best >= 5 && inStreaks >= 0.25 * n)
+            out.push_back({(double)inStreaks / n, {"Too many retries of one map",
+                fmt("You played %s %zu times in a row, and %d of your last %zu plays were in runs of 4 or more on the same map. Replaying one map "
+                    "mostly teaches you that map, and long retry runs are when finger lock and tension creep in. Play a map at most 3 times in "
+                    "a row, then move on to a different one with similar patterns and come back later.", plays[at].title.c_str(), best, inStreaks, n)}});
+    }
+    // too hard: most plays under 85% accuracy
+    int hard = 0, rated = 0;
+    for (size_t i = from; i < plays.size(); i++)
+        if (plays[i].stars > 0) rated++, hard += plays[i].acc < 0.85f;
+    if (rated >= 10 && hard >= 0.5 * rated)
+        out.push_back({(double)hard / rated, {"Most of your maps are too hard right now",
+            fmt("%d of your last %d plays were under 85%% accuracy. You learn the most from maps you can clear at 85%% or better and then push "
+                "towards 98%%: there you can see and fix what you're doing. Spend most of your time there, and only some of it on harder maps.", hard, rated)}});
+    // sessions: plays less than 30 minutes apart, over the last 30 days
+    struct Ses { size_t a, b; };
+    std::vector<Ses> ses;
+    for (size_t i = 0; i < plays.size(); i++) {
+        if (plays[i].when < now - 30 * DAY_MS) continue;
+        if (ses.empty() || plays[i].when - plays[ses.back().b - 1].when > 30 * 60000LL) ses.push_back({i, i + 1});
+        else ses.back().b = i + 1;
+    }
+    auto mean = [&](size_t a, size_t b, auto f) { double s = 0; for (size_t i = a; i < b; i++) s += f(plays[i]); return b > a ? s / (b - a) : 0.0; };
+    auto acc = [](const PlayStats& p) { return (double)p.acc; };
+    auto stars = [](const PlayStats& p) { return (double)p.stars; };
+    // tiring: accuracy in the last third of sessions over 90 minutes, on maps no harder than in the first third
+    double drop = 0, early = 0;
+    int longN = 0;
+    for (auto& s : ses) {
+        size_t k = s.b - s.a, t = k / 3;
+        if (k < 9 || plays[s.b - 1].when - plays[s.a].when < 90 * 60000LL) continue;
+        if (mean(s.b - t, s.b, stars) > mean(s.a, s.a + t, stars) + 0.25) continue;
+        longN++, early += mean(s.a, s.a + t, acc), drop += mean(s.a, s.a + t, acc) - mean(s.b - t, s.b, acc);
+    }
+    if (longN >= 2 && drop / longN >= 0.02)
+        out.push_back({drop / longN * 10, {"You get worse late in long sessions",
+            fmt("In your %d sessions over an hour and a half, your accuracy drops from %.1f%% in the first third to %.1f%% in the last, on maps "
+                "that aren't harder. Take a break of up to 5 minutes every half hour or so and stretch your fingers, wrists and forearms, and "
+                "stop when your hand feels tense: tired, tense hands are when finger lock happens.", longN, 100 * early / longN, 100 * (early - drop) / longN)}});
+    // starting cold: the first 2 plays of a session against the rest, on maps no harder
+    double cold = 0, rest = 0;
+    int coldN = 0;
+    for (auto& s : ses) {
+        if (s.b - s.a < 6 || mean(s.a, s.a + 2, stars) > mean(s.a + 2, s.b, stars) + 0.25) continue;
+        coldN++, cold += mean(s.a, s.a + 2, acc), rest += mean(s.a + 2, s.b, acc);
+    }
+    if (coldN >= 3 && (rest - cold) / coldN >= 0.02)
+        out.push_back({(rest - cold) / coldN * 10, {"Warm up before your hard maps",
+            fmt("Your first 2 plays of a session average %.1f%% accuracy against %.1f%% for the rest. Spend the first 10 to 15 minutes on maps "
+                "a bit below your level, going from slow to fast and from low to high approach rate, before the maps you want to push.",
+                100 * cold / coldN, 100 * rest / coldN)}});
+    std::sort(out.begin(), out.end(), [](auto& a, auto& b) { return a.first > b.first; });
+    std::vector<Habit> h;
+    for (size_t i = 0; i < out.size() && i < 3; i++) h.push_back(out[i].second);
+    return h;
+}
+
 Report coach(const std::vector<PlayStats>& plays, std::vector<Day>& hist, int64_t now) {
     Report r{};
     // 1. fold this scan into the daily history. A stored date is replaced, all bins at once, only when this scan has
@@ -170,10 +242,17 @@ Report coach(const std::vector<PlayStats>& plays, std::vector<Day>& hist, int64_
         Weakness w{(Skill)s, cost, "", ""};
         if (s == TIMING) {
             w.metric = fmt("Your timing steadiness (UR) is %.0f; in your best week it was %.0f. Lower is steadier.", recentErr.ur(), bestUr);
-            w.fix = std::fabs(recentErr.mean()) > 5
-                ? fmt("You click %.0f ms too %s on average: tap a little %s, or change your offset in the settings.", std::fabs(recentErr.mean()),
-                      recentErr.mean() < 0 ? "early" : "late", recentErr.mean() < 0 ? "later" : "earlier")
-                : "Play maps with strict timing (OD 8 or more) around 3.5\xE2\x98\x85 for 10 minutes a day. Tap to the music, not to what you see.";
+            int sameSide = 0, sided = 0;
+            for (size_t i = from; i < plays.size(); i++)
+                if (plays[i].err.n >= 20) sided++, sameSide += (plays[i].err.mean() < 0) == (recentErr.mean() < 0);
+            bool steadyBias = std::fabs(recentErr.mean()) > 5 && sided >= 5 && sameSide >= 0.8 * sided;
+            w.fix = steadyBias
+                ? fmt("You click %.0f ms too %s on average, in %d of your last %d plays. That's steady enough to fix with your offset: change the universal offset in the settings by about %.0f ms, then check the hit error bar on a few easy maps.",
+                      std::fabs(recentErr.mean()), recentErr.mean() < 0 ? "early" : "late", sameSide, sided, std::fabs(recentErr.mean()))
+                : std::fabs(recentErr.mean()) > 5
+                ? fmt("You click %.0f ms too %s on average, but it changes from play to play, so don't touch your offset yet: get steadier first. Tap to the music, not to what you see.",
+                      std::fabs(recentErr.mean()), recentErr.mean() < 0 ? "early" : "late")
+                : "Play maps you can pass easily with strict timing (OD 8 or more) for 10 minutes a day, and aim for 98% accuracy; restart when you drop below it. Tap to the music, not to what you see.";
         } else {
             w.metric = r.needHistory
                 ? fmt("You miss %.1f%% of %s (%.0f of %.0f lately).", 100 * r.actual[s], kLabel[s], act.miss[s], act.obj[s])
@@ -183,21 +262,21 @@ Report coach(const std::vector<PlayStats>& plays, std::vector<Day>& hist, int64_
             switch (s) {
                 case JUMPS: case BIGJUMPS:
                     w.fix = sig[0] >= sig[1]
-                        ? fmt("You usually stop short of the circle (%d times, against %d times going past it). Move all the way to the centre. Practise jump maps for 10 minutes a day.", sig[0], sig[1])
-                        : fmt("You usually go past the circle (%d times, against %d times stopping short). Slow down at the end of each jump and stop on the circle.", sig[1], sig[0]);
+                        ? fmt("You usually stop short of the circle (%d times, against %d times going past it). That's holding back: jumps should feel confident, so play looser and move all the way to the centre. Tap to the beat and let your aim follow your taps. Practise jump maps for 10 minutes a day, and replay easier maps with DT or HR to make normal jumps feel slow.", sig[0], sig[1])
+                        : fmt("You usually go past the circle (%d times, against %d times stopping short). Slow down at the end of each jump and stop on the circle. If it feels different from day to day, check your setup: Raw Input on, Windows pointer speed at 6/11 with Enhance Pointer Precision off, and stop changing your sensitivity or tablet area: each change resets your muscle memory.", sig[1], sig[0]);
                     break;
                 case STREAMS:
                     w.fix = late < -8 ? fmt("You speed up in long streams (later notes come %.0f ms too early). Tap a little slower and follow the music, not your fingers.", -late)
-                          : alt < 60 ? fmt("You switch fingers on only %.0f%% of stream notes. Switch on every note: J, K, J, K.", alt)
-                                     : std::string("Practise streams a little slower than your limit until you full-combo them, then go 5 BPM faster.");
+                          : alt < 60 ? fmt("You switch fingers on only %.0f%% of stream notes. Switch on every note: K1, K2, K1, K2. For a week, start every burst and stream with your other finger on purpose until it's automatic.", alt)
+                                     : std::string("Find the stream speed where you hit 98 to 100% accuracy. Play streams at that speed until your forearm feels tired, rest 2 minutes, and do that 4 times. Once it's easy, go 5 to 10 BPM faster.");
                     break;
                 case SPEED:
-                    w.fix = ov > 20 ? fmt("Finger lock: on %.0f%% of fast notes you still hold the last key when you press the next one. Let go quickly and switch fingers on every note.", ov)
+                    w.fix = ov > 20 ? fmt("On %.0f%% of fast notes you still hold the last key when you press the next one: that's how finger lock starts. Press lightly and let go at once, keep your wrist still and your hand loose, and switch fingers on every note.", ov)
                           : j < 35 || j > 65 ? fmt("%.0f%% of your taps are on %s. Use both fingers, even on slower notes, so both stay warmed up.", std::max(j, 100 - j), j < 35 ? "K" : "J")
                                              : std::string("Practise short fast bursts a bit above your comfortable speed, then go back to full maps.");
                     break;
-                case READING: w.fix = "You miss the first note after a pause. Keep your eyes on the screen during pauses, and play maps where circles appear quickly (AR 8.5 to 9)."; break;
-                default: w.fix = "You miss more near the end of long runs: your hand gets tired. Play longer stream maps at a speed you can manage, and relax your hand between bursts."; break;
+                case READING: w.fix = "You miss the first note after a pause. Keep your eyes on the screen during pauses and count in the last beats. To read faster in general, step up the approach rate slowly (get comfortable at AR 8 before AR 9), and read the next circle instead of clicking each one in a panic as soon as it appears."; break;
+                default: w.fix = "You miss more near the end of long runs: your hand gets tired. A tense hand tires much faster, so stay relaxed and keep your wrist still. Build up with longer stream maps at a speed you can manage, a few sets with 2-minute rests. If your hand or forearm hurts, skip stream practice for a few days."; break;
             }
         }
         ws.push_back(std::move(w));
@@ -205,6 +284,8 @@ Report coach(const std::vector<PlayStats>& plays, std::vector<Day>& hist, int64_
     std::sort(ws.begin(), ws.end(), [](auto& a, auto& b) { return a.pp > b.pp; });
     r.nTop = (int)std::min<size_t>(3, ws.size());
     for (int i = 0; i < r.nTop; i++) r.top[i] = ws[i];
+
+    r.habits = habits(plays, from, now);
 
     // 5. trends: this week vs last week
     int d7 = ymd(now - 6 * DAY_MS), d14 = ymd(now - 13 * DAY_MS);  // today + 6 days, and the 7 days before
@@ -256,11 +337,13 @@ Explain explainMiss(const ObjRes& o, float beatMs, const ObjRes* prev) {
             bool jump = o.spacing > 4;
             if (jump) t += fmt(" This was a jump of %.1f circle widths", o.spacing / 2) + (timed ? fmt(" in %.0f ms", o.gap) : "") + where + ".";
             else if (!where.empty()) t += " This happened" + where + ".";
-            std::string tip = o.along < 0 ? "Move all the way to the centre of the circle; don't slow down before you arrive. Aim for the middle, not the edge: the edge leaves no room for error."
+            std::string tip = o.along < 0 ? "Move all the way to the centre of the circle; don't slow down before you arrive. Aim for the middle, not the edge: the edge leaves no room for error. "
+                                            "Stopping short usually means holding back: commit to the jump, and tap to the beat with your aim following your taps."
                             : o.along > 0 ? "Slow down at the end of the move and stop on the circle. Land in the middle and stay still there for a moment before the next move."
                                           : "Watch the next circle, not your cursor, and move straight to it.";
             std::string pr = jump && timed
-                ? fmt("Practise jumps of about %.1f circle widths, %.0f ms apart: jump maps a little below your star rating, aiming for the centre of every circle.", o.spacing / 2, o.gap)
+                ? fmt("Practise jumps of about %.1f circle widths, %.0f ms apart: jump maps a little below your star rating, aiming for the centre of every circle. "
+                      "Replaying easier maps with DT or HR also helps: afterwards, normal jumps feel slow.", o.spacing / 2, o.gap)
                 : std::string("Practise maps with lots of small movements at your level, landing in the centre of each circle instead of anywhere on it.");
             return {"Missed: aim", t, tip, pr, D_AIM};
         }
@@ -412,10 +495,12 @@ Explain explainStop(const std::vector<ObjRes>& objs, const std::vector<Tap>& tap
         t += hardTxt + result;
         return {fmt("Finger lock in a %s", kind), t,
                 "This is finger lock: your hand tenses up and the fingers stop taking turns. Keep them moving, K1, K2, K1, K2, even when you feel "
-                "you're falling behind: a late tap still scores a 100 or 50, a frozen finger scores nothing. Keep your hand and wrist loose before the "
-                "stream starts, and press the keys lightly.",
+                "you're falling behind: a late tap still scores a 100 or 50, a frozen finger scores nothing. Keep your hand and wrist loose and still "
+                "before the stream starts, and press the keys lightly. It shows up most in long sessions and long retry runs of one map: if it keeps "
+                "happening, take a short break and stretch your fingers.",
                 fmt("Practise %d-note %ss at about %.0f BPM (10%% slower than this one) until you can play ten in a row without locking, then go up 5 BPM at "
-                    "a time. Between maps, tap K1 K2 along to a %.0f BPM metronome, four taps per beat, for 20 seconds at a time, staying relaxed.",
+                    "a time. Start each one with your other finger on purpose, so switching becomes automatic. Between maps, tap K1 K2 along to a %.0f BPM "
+                    "metronome, four taps per beat, for 20 seconds at a time, staying relaxed.",
                     r.n, kind, round5(r.bpm * 0.9f), round5(r.bpm * 0.9f)),
                 D_LOCK};
     }
@@ -425,9 +510,11 @@ Explain explainStop(const std::vector<ObjRes>& objs, const std::vector<Tap>& tap
                 "Press lighter: just hard enough for the key to count, without slamming it to the bottom, and let both fingers bounce back up at the "
                 "same speed. Rest both fingers on the keys so neither has farther to travel. If your keyboard lets you set the actuation point, a "
                 "shallower one helps.",
-                fmt("Play streams at about %.0f BPM, slower than this one, and listen for an even tick-tick-tick instead of ta-dum ta-dum. With the hit "
-                    "error bar on, K1 and K2 hits should land in the same spot; speed up 5 BPM only once they do. Tapping to a metronome at that speed "
-                    "with light presses also helps.", round5(r.bpm * 0.85f)),
+                fmt("Slow right down: play stream and burst maps at about %.0f BPM, with No Fail so stamina doesn't get in the way, and listen for an even "
+                    "tick-tick-tick instead of ta-dum ta-dum. Tap both fingers slowly at exactly the same pace first, then speed up. Aim the start of each "
+                    "stream well, so the hit error bar shows your tapping, not your aim: K1 and K2 hits should land in the same spot. Go up 10 BPM once you "
+                    "full-combo with 95%% accuracy or better. Galloping fades with steady practice, so give it a few weeks.",
+                    std::clamp(round5(r.bpm * 0.75f), 100.f, 160.f)),
                 D_GALLOP};
     float drift = r.errLate - r.errEarly;
     if (std::fabs(drift) >= std::max(12.f, 0.25f * r.gap)) {
@@ -439,9 +526,10 @@ Explain explainStop(const std::vector<ObjRes>& objs, const std::vector<Tap>& tap
                     "what you see, and stay relaxed so your fingers don't run off.",
                     fmt("Play streams at %.0f BPM with the music loud and keep the hit error bar centred from the first note to the last.", round5(r.bpm)), D_RUSH};
         return {fmt("Fell behind in the %s", kind), head + start + ": this speed is at the edge of what your fingers can do right now." + result,
-                "Don't tense up to go faster; stay loose and keep alternating. Tension is what slows fingers down and then locks them.",
-                fmt("Build speed: practise streams at %.0f BPM until they're clean and centred, then go up 5 BPM at a time towards %.0f.", round5(r.bpm * 0.9f),
-                    round5(r.bpm)), D_DRAG};
+                "Don't tense up to go faster; stay loose and keep alternating. Tension is what slows fingers down and then locks them. Falling behind "
+                "late in a stream is usually stamina, not finger control.",
+                fmt("Build speed and stamina: play streams at %.0f BPM until your forearm feels tired, rest 2 minutes, and do that 4 times. Once that's clean "
+                    "and centred, go up 5 BPM at a time towards %.0f.", round5(r.bpm * 0.9f), round5(r.bpm)), D_DRAG};
     }
     return {fmt("Broke in a %s", kind),
             head + (r.before ? fmt(" You kept up for %s.", notes.c_str()) : std::string()) +
