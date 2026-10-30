@@ -40,24 +40,35 @@ void drawApp(App& a);
 void setupStyle(float dpi);  // fonts, colours and the 8 px spacing grid
 extern int gForceTab;  // >= 0 selects that tab on the next frame (used by --screenshot)
 
-// ---- design system: scoreboard palette, flat fills, square corners, 8 px grid, 44 px controls ----
+// ---- design system: retro desktop. Cream windows with 2 px ink outlines, hard offset shadows and coloured title bars on a
+// gridded blue desk; square corners, 8 px grid, 44 px controls. Buttons press in (the shadow disappears) instead of animating.
 #include "imgui.h"
-constexpr ImU32 cInk = IM_COL32(20, 18, 16, 255), cPanel = IM_COL32(28, 25, 21, 255), cRule = IM_COL32(58, 52, 44, 255),
-                cCream = IM_COL32(242, 234, 219, 255), cMuted = IM_COL32(184, 174, 156, 255), cPink = IM_COL32(255, 102, 170, 255),
-                cGreen = IM_COL32(200, 240, 49, 255), cAmber = IM_COL32(255, 176, 32, 255), cRed = IM_COL32(255, 90, 54, 255);
-enum { BODY, LABEL, TITLE, HEAD, MONO };  // Plex Sans 18, Plex Sans SemiBold 15, Barlow Condensed 28 / 52, Plex Mono 17
+constexpr ImU32 cDesk = IM_COL32(126, 178, 212, 255), cWin = IM_COL32(247, 241, 229, 255), cWell = IM_COL32(236, 227, 210, 255),
+                cInk = IM_COL32(30, 27, 44, 255), cRule = IM_COL32(214, 202, 182, 255), cMuted = IM_COL32(94, 87, 104, 255),
+                cOrange = IM_COL32(236, 102, 62, 255), cPink = IM_COL32(246, 166, 186, 255), cYellow = IM_COL32(245, 187, 64, 255),
+                cBlue = IM_COL32(48, 108, 176, 255), cGood = IM_COL32(22, 108, 60, 255), cBad = IM_COL32(182, 42, 20, 255),
+                cWarn = IM_COL32(150, 86, 0, 255);
+// the replay playfield is a dark screen inside its window
+constexpr ImU32 cScreen = IM_COL32(36, 32, 54, 255), cScreenRule = IM_COL32(78, 72, 102, 255), cScreenMuted = IM_COL32(172, 164, 188, 255),
+                cHotPink = IM_COL32(255, 128, 176, 255), cHotRed = IM_COL32(255, 96, 70, 255), cHotAmber = IM_COL32(255, 190, 70, 255),
+                cLime = IM_COL32(186, 232, 96, 255);
+enum { BODY, LABEL, TITLE, HEAD, MONO, BAR };  // Plex Sans 18, Plex Sans SemiBold 15, Bricolage Grotesque 26 / 48, Plex Mono 17, Bricolage 19
 extern float gS;                          // DPI scale
 float S(float v);                         // px at 100% -> px on screen
 ImFont* font(int i);
 ImU32 alpha(ImU32 c, int a);
 std::string sf(const char* f, ...);
 void txt(int f, ImU32 c, const std::string& s, bool wrap = false);
-void section(const char* id, float w, float h, bool autoH = false);  // flat panel, 1 px rule border, 16 px padding
-void endSection();
-void gap();   // 16 px between sections
+// A window: optional title bar in `bar` colour, cream body with 16 px padding, ink outline and a hard shadow.
+// w / h <= 0 fill the space left (minus the shadow) plus that amount; autoH sizes the height to the content.
+void window(const char* id, const char* title, ImU32 bar, float w, float h, bool autoH = false, const std::string& note = "");
+void endWindow();
+void gap();   // 16 px between windows
 void rule();  // full-width 1 px divider
-bool button1(const char* label, ImVec2 size = {0, 0});  // primary: pink fill, ink text
-bool button2(const char* label);  // secondary: panel fill, rule border
+bool button1(const char* label, ImVec2 size = {0, 0});  // primary: yellow
+bool button2(const char* label, ImVec2 size = {0, 0});  // secondary: cream
+float buttonW(const char* label);                       // width of a button with this label
+void flow(float w, float gap);  // put the next item (w wide) after the last one, or on a new line if it doesn't fit
 bool table(const char* id, int cols, float h = 0, int extra = 0);
 void headerRow();
 void cell(ImU32 c, const std::string& s);

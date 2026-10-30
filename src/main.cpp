@@ -106,6 +106,9 @@ static ID3D11DeviceContext* gCtx;
 static IDXGISwapChain* gSwap;
 static ID3D11RenderTargetView* gRtv;
 static UINT gResizeW, gResizeH;
+static float gDpi = 1;
+static void (*gRedraw)();  // draws one frame; called from WM_SIZE while the user drags the window edge
+static bool gSizing;
 
 static void createRtv() {
     ID3D11Texture2D* bb;
@@ -116,11 +119,17 @@ static void createRtv() {
 static bool createDevice(HWND h) {
     DXGI_SWAP_CHAIN_DESC sd{};
     sd.BufferCount = 2, sd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM, sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-    sd.OutputWindow = h, sd.SampleDesc.Count = 1, sd.Windowed = TRUE, sd.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
+    sd.OutputWindow = h, sd.SampleDesc.Count = 1, sd.Windowed = TRUE;
     D3D_FEATURE_LEVEL fl, want[] = {D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_0};
-    HRESULT r = D3D11CreateDeviceAndSwapChain(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, 0, want, 2, D3D11_SDK_VERSION, &sd, &gSwap, &gDev, &fl, &gCtx);
-    if (r == DXGI_ERROR_UNSUPPORTED)
-        r = D3D11CreateDeviceAndSwapChain(nullptr, D3D_DRIVER_TYPE_WARP, nullptr, 0, want, 2, D3D11_SDK_VERSION, &sd, &gSwap, &gDev, &fl, &gCtx);
+    // flip model (Windows 10+): no extra copy per frame and smoother resizing; the old blit model where it's unavailable
+    HRESULT r = E_FAIL;
+    for (auto fx : {DXGI_SWAP_EFFECT_FLIP_DISCARD, DXGI_SWAP_EFFECT_DISCARD}) {
+        sd.SwapEffect = fx;
+        r = D3D11CreateDeviceAndSwapChain(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, 0, want, 2, D3D11_SDK_VERSION, &sd, &gSwap, &gDev, &fl, &gCtx);
+        if (r == DXGI_ERROR_UNSUPPORTED)
+            r = D3D11CreateDeviceAndSwapChain(nullptr, D3D_DRIVER_TYPE_WARP, nullptr, 0, want, 2, D3D11_SDK_VERSION, &sd, &gSwap, &gDev, &fl, &gCtx);
+        if (SUCCEEDED(r)) break;
+    }
     if (FAILED(r)) return false;
     createRtv();
     return true;
@@ -156,9 +165,41 @@ static void saveBackbuffer(const std::wstring& path) {
     bb->Release();
 }
 
+static void resizeBuffers() {
+    if (!gResizeW) return;
+    if (gRtv) gRtv->Release(), gRtv = nullptr;
+    gSwap->ResizeBuffers(0, gResizeW, gResizeH, DXGI_FORMAT_UNKNOWN, 0);
+    gResizeW = gResizeH = 0;
+    createRtv();
+}
+static void renderFrame(App& app, const std::wstring& shotPath = L"") {
+    resizeBuffers();
+    ImGui_ImplDX11_NewFrame();
+    ImGui_ImplWin32_NewFrame();
+    ImGui::NewFrame();
+    drawApp(app);
+    ImGui::Render();
+    const float clear[4] = {126 / 255.f, 178 / 255.f, 212 / 255.f, 1};  // cDesk
+    gCtx->OMSetRenderTargets(1, &gRtv, nullptr);
+    gCtx->ClearRenderTargetView(gRtv, clear);
+    ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+    if (!shotPath.empty()) saveBackbuffer(shotPath);
+    gSwap->Present(1, 0);
+}
+
 static LRESULT WINAPI wndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
     if (ImGui_ImplWin32_WndProcHandler(h, m, w, l)) return true;
-    if (m == WM_SIZE && w != SIZE_MINIMIZED) { gResizeW = LOWORD(l), gResizeH = HIWORD(l); return 0; }
+    if (m == WM_SIZE && w != SIZE_MINIMIZED) {
+        gResizeW = LOWORD(l), gResizeH = HIWORD(l);
+        if (gSizing && gRedraw) gRedraw();  // the main loop is blocked in the system's sizing loop: draw from here
+        return 0;
+    }
+    if (m == WM_ENTERSIZEMOVE || m == WM_EXITSIZEMOVE) { gSizing = m == WM_ENTERSIZEMOVE; return 0; }
+    if (m == WM_GETMINMAXINFO) {  // below this the layout stops fitting; the page scrolls between that and the default size
+        auto* mm = (MINMAXINFO*)l;
+        mm->ptMinTrackSize = {(LONG)(900 * gDpi), (LONG)(620 * gDpi)};
+        return 0;
+    }
     if (m == WM_SYSCOMMAND && (w & 0xfff0) == SC_KEYMENU) return 0;
     if (m == WM_DESTROY) { PostQuitMessage(0); return 0; }
     return DefWindowProcW(h, m, w, l);
@@ -229,7 +270,7 @@ int wmain(int argc, wchar_t** argv) {
     ImGui_ImplWin32_EnableDpiAwareness();
     WNDCLASSEXW wc{sizeof wc, CS_CLASSDC, wndProc, 0, 0, GetModuleHandleW(nullptr), LoadIconW(nullptr, (LPCWSTR)IDI_APPLICATION), nullptr, nullptr, nullptr, L"osu-coach", nullptr};
     RegisterClassExW(&wc);
-    float dpi = ImGui_ImplWin32_GetDpiScaleForMonitor(MonitorFromPoint({0, 0}, MONITOR_DEFAULTTOPRIMARY));
+    float dpi = gDpi = ImGui_ImplWin32_GetDpiScaleForMonitor(MonitorFromPoint({0, 0}, MONITOR_DEFAULTTOPRIMARY));
     HWND hwnd = CreateWindowW(L"osu-coach", L"osu-coach", WS_OVERLAPPEDWINDOW, 100, 100, (int)(1280 * dpi), (int)(820 * dpi), nullptr, nullptr, wc.hInstance, nullptr);
     if (!createDevice(hwnd)) { MessageBoxW(nullptr, L"Direct3D 11 is not available.", L"osu-coach", MB_ICONERROR); return 1; }
     ShowWindow(hwnd, shotDir.empty() ? SW_SHOWDEFAULT : SW_HIDE);
@@ -243,6 +284,7 @@ int wmain(int argc, wchar_t** argv) {
 
     static App app;
     app.hwnd = hwnd;
+    gRedraw = [] { app.poll(); renderFrame(app); };
     app.osuDir = findOsuDir();
     app.startScan();
 
@@ -264,12 +306,6 @@ int wmain(int argc, wchar_t** argv) {
             idle = 3;
             continue;
         }
-        if (gResizeW) {
-            if (gRtv) gRtv->Release(), gRtv = nullptr;
-            gSwap->ResizeBuffers(0, gResizeW, gResizeH, DXGI_FORMAT_UNKNOWN, 0);
-            gResizeW = gResizeH = 0;
-            createRtv();
-        }
         bool saveShot = false;
         if (!shotDir.empty() && app.scanned) {
             int tab = shot / 4;  // tabs 0-7, then 8 = the viewer stopped at the first mistake of the newest play with one
@@ -286,17 +322,7 @@ int wmain(int argc, wchar_t** argv) {
                     if (app.res.plays[i].gmiss > 0) app.selPlay = i;
             saveShot = shot++ % 4 == 3;
         }
-        ImGui_ImplDX11_NewFrame();
-        ImGui_ImplWin32_NewFrame();
-        ImGui::NewFrame();
-        drawApp(app);
-        ImGui::Render();
-        const float clear[4] = {20 / 255.f, 18 / 255.f, 16 / 255.f, 1};
-        gCtx->OMSetRenderTargets(1, &gRtv, nullptr);
-        gCtx->ClearRenderTargetView(gRtv, clear);
-        ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
-        if (saveShot) saveBackbuffer(shotDir + (shot / 4 - 1 == 8 ? std::wstring(L"\\viewer.bmp") : L"\\tab" + std::to_wstring(shot / 4 - 1) + L".bmp"));
-        gSwap->Present(1, 0);
+        renderFrame(app, !saveShot ? L"" : shotDir + (shot / 4 - 1 == 8 ? std::wstring(L"\\viewer.bmp") : L"\\tab" + std::to_wstring(shot / 4 - 1) + L".bmp"));
     }
     while (app.busy) app.poll(), Sleep(20);  // only poll() clears busy: let a running scan finish and land
     ImGui_ImplDX11_Shutdown();
