@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <thread>
 #include "gui.h"
+#include "ui_art.h"
 #include "imgui.h"
 #include "backends/imgui_impl_dx11.h"
 #include "backends/imgui_impl_win32.h"
@@ -190,7 +191,7 @@ static void renderFrame(App& app, const std::wstring& shotPath = L"") {
     ImGui::NewFrame();
     drawApp(app);
     ImGui::Render();
-    const float clear[4] = {126 / 255.f, 178 / 255.f, 212 / 255.f, 1};  // cDesk
+    const float clear[4] = {12 / 255.f, 23 / 255.f, 34 / 255.f, 1};  // cDesk
     gCtx->OMSetRenderTargets(1, &gRtv, nullptr);
     gCtx->ClearRenderTargetView(gRtv, clear);
     ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
@@ -315,6 +316,7 @@ int wmain(int argc, wchar_t** argv) {
     ImGui::CreateContext();
     ImGui::GetIO().IniFilename = nullptr;
     setupStyle(dpi);
+    loadUiArt(gDev);
     ImGui_ImplWin32_Init(hwnd);
     ImGui_ImplDX11_Init(gDev, gCtx);
 
@@ -362,6 +364,7 @@ int wmain(int argc, wchar_t** argv) {
     }
     app.quitting = true;  // workers stop at their next replay or map
     while (app.busy || app.objsBusy) app.poll(), Sleep(20);  // only poll() clears these: let running workers land
+    releaseUiArt();
     ImGui_ImplDX11_Shutdown();
     ImGui_ImplWin32_Shutdown();
     ImGui::DestroyContext();

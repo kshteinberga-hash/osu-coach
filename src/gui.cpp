@@ -9,6 +9,8 @@
 #include "imgui.h"
 #include "imgui_internal.h"
 #include "fonts.inl"
+#include "ui_art.h"
+#include "overview.h"
 
 namespace {
 // Recent-window totals for the detail tabs, rebuilt once per scan.
@@ -146,17 +148,14 @@ void line(const std::vector<float>& v, float h, const char* unit) {
     dl->AddText(f, f->FontSize, {p.x, bot - f->FontSize}, cMuted, sf("%.*f%s", *unit ? 1 : 0, mn, unit).c_str());
 }
 
-// Headline block: label, then one big number on a sticker (yellow, orange when it's bad news), then a note.
+// Headline block: label, value, and an explanatory note.
 void headline(const char* label, const std::string& value, bool bad, const std::string& note) {
     txt(LABEL, cMuted, label);
     ImGui::Dummy({0, S(4)});
     ImVec2 p = ImGui::GetCursorScreenPos(), ts = textSize(HEAD, value.c_str());
     ImVec2 b{p.x + ts.x + S(24), p.y + ts.y + S(8)};
     ImDrawList* dl = ImGui::GetWindowDrawList();
-    dl->AddRectFilled({p.x + S(4), p.y + S(4)}, {b.x + S(4), b.y + S(4)}, cInk, S(4));
-    dl->AddRectFilled(p, b, bad ? cOrange : cYellow, S(4));
-    outline(dl, p, b, cInk, S(2), S(4));
-    dl->AddText(font(HEAD), font(HEAD)->FontSize, {p.x + S(12), p.y + S(4)}, cInk, value.c_str());
+    dl->AddText(font(HEAD), font(HEAD)->FontSize, {p.x + S(12), p.y + S(4)}, bad ? cBad : cInk, value.c_str());
     ImGui::Dummy({b.x - p.x + S(4), b.y - p.y + S(4)});
     if (!note.empty()) ImGui::Dummy({0, S(4)}), txt(BODY, cMuted, note, true);
 }
@@ -200,15 +199,13 @@ void split() {
 }
 void endTop() { ImGui::EndTable(); ImGui::PopStyleVar(); endWindow(); gap(); }
 
-// A small numbered square, like a key cap, used for ranked lists.
+// A numbered marker for ranked lists.
 void badge(int n, int f = TITLE) {
     std::string s = std::to_string(n);
     float side = font(f)->FontSize + S(8);
     ImVec2 p = ImGui::GetCursorScreenPos(), ts = textSize(f, s.c_str());
     ImDrawList* dl = ImGui::GetWindowDrawList();
-    dl->AddRectFilled({p.x + S(3), p.y + S(3)}, {p.x + side + S(3), p.y + side + S(3)}, cInk, S(4));
-    dl->AddRectFilled(p, {p.x + side, p.y + side}, cYellow, S(4));
-    outline(dl, p, {p.x + side, p.y + side}, cInk, S(2), S(4));
+    dl->AddRectFilled(p, {p.x + side, p.y + side}, n == 1 ? cPink : n == 2 ? cYellow : cWell, 0);
     dl->AddText(font(f), font(f)->FontSize, {p.x + (side - ts.x) / 2, p.y + (side - ts.y) / 2}, cInk, s.c_str());
     ImGui::Dummy({side + S(3), side + S(3)});
 }
@@ -246,46 +243,7 @@ void workItem(int i, const Weakness& wk, size_t plays) {
 }
 
 void tabOverview(App& a, const Recent& rc) {
-    const Report& r = a.rep;
-    top("top", "Coach verdict");
-    txt(TITLE, cInk, r.verdict, true);
-    ImGui::Dummy({0, S(8)});
-    txt(BODY, cMuted, sf("Based on your last %zu plays. Older plays are your baseline.", rc.plays), true);
-    split();
-    fact("Timing steadiness (UR, lower is steadier)", sf("%.0f", rc.err.ur()), cInk, trendWord(r.trend[0]));
-    fact("Average accuracy", sf("%.2f%%", 100 * rc.accSum / std::max<size_t>(1, rc.plays)), cInk, sf("%.0f%% full combos", pct(rc.fcs, rc.plays)));
-    fact("Jump misses this week", trendWord(r.trend[1]) + 4, trendCol(r.trend[1]));
-    fact("Stream misses this week", trendWord(r.trend[2]) + 4, trendCol(r.trend[2]));
-    endTop();
-
-    auto skills = [&](float w, float h) {
-        window("radar", "Your skills", cWell, w, h);
-        txt(BODY, cMuted, r.needHistory ? "Needs older plays to compare with, so every skill shows 50 for now."
-                                        : "Compared with your usual: 50 = normal for you, higher = better than usual.", true);
-        float avail = ImGui::GetContentRegionAvail().x, rs = std::min(avail, ImGui::GetContentRegionAvail().y);
-        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail - rs) / 2);
-        radar(r, rs);
-        endWindow();
-    };
-    auto work = [&](float h) {
-        window("work", "What to work on", cWell, 0, h, h <= 0);
-        if (!r.nTop) txt(BODY, cInk, "Nothing is costing you much right now. Try slightly harder maps.", true);
-        for (int i = 0; i < r.nTop; i++) {
-            if (i) ImGui::Dummy({0, S(4)}), rule(), ImGui::Dummy({0, S(4)});
-            workItem(i, r.top[i], rc.plays);
-        }
-        endWindow();
-    };
-    if (ImGui::GetContentRegionAvail().x < S(900)) {  // narrow: skills on top, the list under it, and the page scrolls
-        skills(0, S(460));
-        gap();
-        work(0);
-        return;
-    }
-    float h = fill(S(400)), lw = std::floor(std::max(S(400), ImGui::GetContentRegionAvail().x * 0.40f));
-    skills(lw, h);
-    ImGui::SameLine(0, S(16));
-    work(h);
+    drawOverview(a, 100 * rc.accSum / std::max<size_t>(1, rc.plays), rc.err.ur(), pct(rc.fcs, rc.plays), rc.plays);
 }
 
 void tabTiming(const Recent& rc) {
@@ -302,7 +260,7 @@ void tabTiming(const Recent& rc) {
          sf("steadiness %.0f / %.0f", rc.errKey[0].ur(), rc.errKey[1].ur()));
     endTop();
     window("hist", "When your clicks land", cWell, 0, fill(S(240)));
-    txt(BODY, cMuted, "Each bar is 2 ms. The orange line is perfect timing; a narrow, tall pile means steady timing.", true);
+    txt(BODY, cMuted, "Each bar is 2 ms. The pink line is perfect timing; a narrow, tall pile means steady timing.", true);
     ImGui::Dummy({0, S(8)});
     bars(rc.hist, 100, std::max(S(120), ImGui::GetContentRegionAvail().y - S(32)), 50);
     axis("100 ms early", "perfect", "100 ms late");
@@ -529,7 +487,7 @@ void tabPlays(App& a) {
     float rest = ImGui::GetContentRegionAvail().y;
     missList(p, a.selectedObjs(), std::max(S(132), rest - S(48) - S(8) - font(LABEL)->FontSize - 3 * S(8) - S(4)), (int64_t)a.gen << 32 | (uint32_t)a.selPlay);
     ImGui::Dummy({0, S(4)});
-    txt(LABEL, cMuted, "When your clicks landed in this play (orange line = perfect)");
+    txt(LABEL, cMuted, "When your clicks landed in this play (pink line = perfect)");
     float hist[100];
     for (int k = 0; k < 100; k++) hist[k] = (float)p.hist[k];
     bars(hist, 100, S(48), 50);
@@ -630,7 +588,23 @@ void tabProgress(const Report& r, int gen) {
     }
 }
 
-// The menu bar across the top: logo, tabs (the current one inverted), and the folder buttons on the right.
+// Small line icons, drawn in the same coordinate system as their hit targets.
+void navIcon(ImDrawList* dl, int icon, ImVec2 p, ImU32 color) {
+    auto pt=[&](float x,float y){return ImVec2{p.x+S(x),p.y+S(y)};};
+    auto line=[&](float x,float y,float xx,float yy){dl->AddLine(pt(x,y),pt(xx,yy),color,S(1.5f));};
+    switch(icon) {
+        case 0: line(1,8,9,1); line(9,1,17,8); line(4,7,4,17); line(4,17,14,17); line(14,17,14,7); break;
+        case 1: dl->AddCircle(pt(9,9),S(8),color,24,S(1.5f)); line(9,4,9,9); line(9,9,13,11); break;
+        case 2: dl->AddCircle(pt(9,9),S(6),color,24,S(1.5f)); line(9,0,9,5);line(9,13,9,18);line(0,9,5,9);line(13,9,18,9);break;
+        case 3: line(11,0,3,10);line(3,10,10,10);line(10,10,7,18);line(7,18,16,7);line(16,7,10,7);line(10,7,11,0);break;
+        case 4: dl->AddRect(pt(1,3),pt(17,16),color,0,0,S(1.5f));line(9,3,9,16);line(3,6,6,6);line(11,6,15,6);break;
+        case 5: dl->AddTriangle(pt(4,2),pt(4,17),pt(17,9),color,S(1.5f));break;
+        case 6: line(1,3,6,1);line(6,1,12,4);line(12,4,17,2);line(17,2,17,16);line(17,16,12,18);line(12,18,6,15);line(6,15,1,17);line(1,17,1,3);line(6,1,6,15);line(12,4,12,18);break;
+        default: line(2,17,2,10);line(8,17,8,5);line(14,17,14,0);line(0,18,18,18);break;
+    }
+}
+// Navigation: a sidebar on wide screens and wrapped tabs on smaller screens.
+float gSidebar = 0;
 // When it all doesn't fit on one row the tabs move to a second row. Returns its height.
 float menuBar(App& a, int& tab, bool ready) {
     static const char* kTabs[] = {"Overview", "Timing", "Aim", "Speed", "Reading", "Plays", "Practice maps", "Progress"};
@@ -641,17 +615,48 @@ float menuBar(App& a, int& tab, bool ready) {
     for (auto t : kTabs) tabsW += textSize(BODY, t).x + 2 * tabPad;
     bool viewing = a.viewing && a.viewer;
     float btnW = buttonW("Refresh") + S(12) + buttonW("Change folder");
-    bool two = ready && !viewing && pad + logoW + S(32) + tabsW + S(24) + btnW + pad > W;
-    float h = padY + ctl + padY + (two ? ctl + padY : 0);
-    dl->AddRectFilled(wp, {wp.x + W, wp.y + h}, cWin);
-    dl->AddRectFilled({wp.x, wp.y + h - S(2)}, {wp.x + W, wp.y + h}, cInk);
+    bool side = ready && !viewing && W >= S(1000);
+    gSidebar = side ? S(192) : 0;
+    bool two = ready && !viewing && !side;
+    int navRows = two ? 1 : 0;
+    if (two) {
+        float used = 0, space = std::max(S(1), W - 2 * pad);
+        for (auto t : kTabs) {
+            float tw = textSize(BODY, t).x + 2 * tabPad;
+            if (used > 0 && used + tw > space) ++navRows, used = 0;
+            used += tw;
+        }
+    }
+    float h = padY + ctl + padY + navRows * ctl;
+    dl->AddRectFilled(wp, {wp.x + W, wp.y + h}, IM_COL32(15, 24, 34, 255));
+    if (side) {
+        float bottom = wp.y + ImGui::GetWindowHeight() - S(36);
+        dl->AddRectFilled({wp.x, wp.y + h}, {wp.x + gSidebar, bottom}, IM_COL32(15, 24, 34, 255));
+        dl->AddLine({wp.x + gSidebar, wp.y + h}, {wp.x + gSidebar, bottom}, IM_COL32(140, 41, 58, 255));
+    }
+    dl->AddRectFilled({wp.x, wp.y + h - S(2)}, {wp.x + W, wp.y + h}, cOrange);
+    if (two) dl->AddLine({wp.x + pad, wp.y + padY + ctl + S(5)}, {wp.x + W - pad, wp.y + padY + ctl + S(5)}, IM_COL32(84, 42, 54, 255));
     // logo: a hit circle with its approach ring
     ImVec2 c{wp.x + pad + S(13), wp.y + padY + ctl / 2};
+    // A small deterministic cloud trails from the hit circle. It stays inside the logo area.
+    for (int i = 0; i < 42; ++i) {
+        unsigned int n = (unsigned int)(i * 747796405u + 2891336453u);
+        float dx = S(14 + (n % 28)), dy = S((int)((n >> 9) % 29) - 14);
+        float size = S((i % 5 == 0) ? 2 : 1);
+        dl->AddRectFilled({c.x + dx, c.y + dy}, {c.x + dx + size, c.y + dy + size}, alpha(i % 3 ? cOrange : cBlue, 110));
+    }
     dl->AddCircle(c, S(13), cOrange, 32, S(2.5f));
     dl->AddCircleFilled(c, S(8), cYellow, 24);
-    dl->AddCircle(c, S(8), cInk, 24, S(2));
+    dl->AddCircle(c, S(8), cWin, 24, S(2));
+    float trail = wp.x + pad + logoW;
+    for (int i = 0; i < 68; ++i) {
+        unsigned int n = (unsigned int)(i * 2246822519u + 3266489917u);
+        float x = trail + S((n >> 3) % 70), y = c.y + S((int)((n >> 12) % 33) - 16);
+        float d = S(i % 7 == 0 ? 2 : 1);
+        dl->AddRectFilled({x, y}, {x + d, y + d}, alpha(i % 4 ? cPink : cBlue, 80 + (int)(n % 100)));
+    }
     ImGui::SetCursorPos({pad + S(34), padY + (ctl - font(BAR)->FontSize) / 2});
-    txt(BAR, cInk, "osu-coach");
+    txt(BAR, cWin, "osu-coach");
 
     if (viewing) {
         ImGui::SetCursorPos({pad + logoW + S(32), padY});
@@ -659,30 +664,47 @@ float menuBar(App& a, int& tab, bool ready) {
         float x = ImGui::GetItemRectMax().x - wp.x + S(20);
         ImGui::SetCursorPos({x, padY + (ctl - font(BAR)->FontSize) / 2});
         ImGui::PushClipRect({wp.x + x, wp.y}, {wp.x + W - pad, wp.y + h}, true);
-        txt(BAR, cInk, a.viewer->play.title);
+        txt(BAR, cWin, a.viewer->play.title);
         ImGui::PopClipRect();
         return h;
     }
     if (ready) {
-        float x = two ? pad : pad + logoW + S(32), y = two ? padY + ctl + padY : padY;
+        float x = side ? S(12) : two ? pad : pad + logoW + S(32), y = side ? h + S(20) : two ? padY + ctl + padY : padY;
         for (int i = 0; i < 8; i++) {
-            float tw = textSize(BODY, kTabs[i]).x + 2 * tabPad;
+            float tw = side ? gSidebar - S(24) : textSize(BODY, kTabs[i]).x + 2 * tabPad;
+            if (two && x > pad && x + tw > W - pad) x = pad, y += ctl;
             ImGui::SetCursorPos({x, y});
             ImVec2 p = ImGui::GetCursorScreenPos();
-            if (ImGui::InvisibleButton(kTabs[i], {tw, ctl})) tab = i;
+            if (ImGui::InvisibleButton(kTabs[i], {tw, ctl}, ImGuiButtonFlags_EnableNav)) tab = i;
             bool on = tab == i, hov = ImGui::IsItemHovered();
             if (hov) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-            if (on || hov) dl->AddRectFilled(p, {p.x + tw, p.y + ctl}, on ? cInk : cWell, S(4));
+            if(on && side && gPaperArt) dl->AddImage(gPaperArt,{p.x-S(2),p.y-S(2)},{p.x+tw+S(2),p.y+ctl+S(2)},{0,0},{1,1},cYellow);
+            else if (on || hov) dl->AddRectFilled(p, {p.x + tw, p.y + ctl}, on ? cYellow : IM_COL32(42, 49, 54, 255));
+            if (ImGui::IsItemFocused() && ImGui::GetIO().NavVisible) dl->AddRect(p,{p.x+tw,p.y+ctl},cPink,0,0,S(2));
             ImVec2 ts = textSize(BODY, kTabs[i]);
-            dl->AddText(font(BODY), font(BODY)->FontSize, {p.x + tabPad, p.y + (ctl - ts.y) / 2}, on ? cWin : cInk, kTabs[i]);
-            x += tw;
+            if (side) {
+                navIcon(dl,i,{p.x+S(10),p.y+(ctl-S(18))/2},on ? cInk : IM_COL32(188,211,220,255));
+            }
+            dl->AddText(font(BODY), font(BODY)->FontSize, {p.x + (side ? S(38) : tabPad), p.y + (ctl - ts.y) / 2}, on ? cInk : cWin, kTabs[i]);
+            if (side) y += ctl + S(4); else x += tw;
         }
     }
     ImGui::SetCursorPos({W - pad - btnW, padY});
     ImGui::BeginDisabled(a.busy);
-    if (button2("Refresh")) a.startScan();
+    auto utility=[&](const char* label) {
+        ImVec2 p=ImGui::GetCursorScreenPos(); float w=buttonW(label);
+        bool hit=ImGui::InvisibleButton(label,{w,ctl},ImGuiButtonFlags_EnableNav);
+        bool hover=ImGui::IsItemHovered();
+        if(hover) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+        dl->AddRectFilled(p,{p.x+w,p.y+ctl},ImGui::GetColorU32(hover ? IM_COL32(38,56,67,255) : IM_COL32(22,36,46,255)),S(2));
+        dl->AddRect(p,{p.x+w,p.y+ctl},ImGui::GetColorU32((ImGui::IsItemFocused() && ImGui::GetIO().NavVisible) ? cPink : IM_COL32(64,90,101,255)),S(2));
+        auto ts=textSize(BODY,label);
+        dl->AddText(font(BODY),font(BODY)->FontSize,{p.x+(w-ts.x)/2,p.y+(ctl-ts.y)/2},ImGui::GetColorU32(cWin),label);
+        return hit;
+    };
+    if (utility("Refresh")) a.startScan();
     ImGui::SameLine(0, S(12));
-    if (button2("Change folder")) a.pickFolder();
+    if (utility("Change folder")) a.pickFolder();
     ImGui::EndDisabled();
     return h;
 }
@@ -692,8 +714,8 @@ void statusBar(App& a, float h) {
     ImDrawList* dl = ImGui::GetWindowDrawList();
     ImVec2 wp = ImGui::GetWindowPos();
     float W = ImGui::GetWindowWidth(), H = ImGui::GetWindowHeight(), y = wp.y + H - h, pad = S(24);
-    dl->AddRectFilled({wp.x, y}, {wp.x + W, wp.y + H}, cWell);
-    dl->AddRectFilled({wp.x, y}, {wp.x + W, y + S(2)}, cInk);
+    dl->AddRectFilled({wp.x, y}, {wp.x + W, wp.y + H}, cDesk);
+    dl->AddRectFilled({wp.x, y}, {wp.x + W, y + S(1)}, IM_COL32(54,64,73,255));
     std::string s;
     if (a.viewing && a.viewer) s = "Space plays and pauses  \xC2\xB7  \xE2\x86\x90 / \xE2\x86\x92 jump between mistakes  \xC2\xB7  Enter continues after a stop";
     else if (a.busy && (!a.scanned || a.done < a.total)) s = a.total ? sf("Reading your replays: %d of %d", (int)a.done, (int)a.total) : "Reading osu!.db...";
@@ -714,17 +736,23 @@ void statusBar(App& a, float h) {
     }
     ImFont* f = font(LABEL);
     dl->PushClipRect({wp.x + pad, y}, {right, wp.y + H}, true);
-    dl->AddText(f, f->FontSize, {wp.x + pad, y + (h - f->FontSize) / 2 + S(1)}, cMuted, s.c_str());
+    dl->AddText(f, f->FontSize, {wp.x + pad, y + (h - f->FontSize) / 2 + S(1)}, cScreenMuted, s.c_str());
     dl->PopClipRect();
 }
 
-// The desk: flat blue with a faint 24 px grid.
+// A sparse red signal grid, deliberately dimmer than the content on top.
 void desk(ImVec2 a, ImVec2 b) {
     ImDrawList* dl = ImGui::GetWindowDrawList();
-    float g = S(24);
-    ImU32 c = alpha(cWin, 46);
-    for (float x = a.x + g; x < b.x; x += g) dl->AddLine({x, a.y}, {x, b.y}, c);
-    for (float y = a.y + g; y < b.y; y += g) dl->AddLine({a.x, y}, {b.x, y}, c);
+    float step = S(48);
+    ImU32 grid = IM_COL32(133, 37, 48, 70), node = IM_COL32(222, 50, 68, 125);
+    for (float x = a.x; x < b.x; x += step) dl->AddLine({x, a.y}, {x, b.y}, grid);
+    for (float y = a.y; y < b.y; y += step) dl->AddLine({a.x, y}, {b.x, y}, grid);
+    for (int y = 0; a.y + y * step < b.y; ++y) for (int x = 0; a.x + x * step < b.x; ++x) {
+        if ((x * 13 + y * 7) % 17 == 0) {
+            ImVec2 p{a.x + x * step, a.y + y * step};
+            dl->AddRectFilled({p.x - S(2), p.y - S(2)}, {p.x + S(2), p.y + S(2)}, node);
+        }
+    }
 }
 }
 
@@ -774,22 +802,39 @@ void endWindow() {
     ImGui::EndChild();
     WinFrame f = gFrames.back();
     gFrames.pop_back();
-    float bt = S(2), r = S(8);
-    bool primary = f.title && f.bar != cWell;
+    float bt = S(2), r = 0;
     ImVec2 a = f.min, b{ImGui::GetItemRectMax().x + bt, ImGui::GetItemRectMax().y + bt};
     ImGui::SetCursorScreenPos({a.x, b.y});
     ImGui::Dummy({0, 0});
     ImGui::EndGroup();
     // drawn into the parent, which renders under the child's content
     ImDrawList* dl = ImGui::GetWindowDrawList();
-    if (primary) dl->AddRectFilled({a.x + S(6), a.y + S(6)}, {b.x + S(6), b.y + S(6)}, cInk, r);
-    dl->AddRectFilled(a, b, cWin, r);
+    // Paper sits inside its bounding box; small irregular cuts around the edges
+    // give it a handmade silhouette without intruding on child contents.
+    ImU32 paper = cWin;
+    dl->AddRectFilled({a.x + S(3), a.y + S(3)}, {b.x - S(3), b.y - S(3)}, paper);
+    for (float x = a.x + S(3); x < b.x - S(3); x += S(16)) {
+        float x2 = std::min(x + S(16), b.x - S(3));
+        int n = (int)((x - a.x) / std::max(1.f, S(16)));
+        dl->AddTriangleFilled({x, a.y + S(3)}, {x2, a.y + S(3)}, {(x + x2) / 2, a.y + S((n * 17 + n / 3) % 4)}, paper);
+        dl->AddTriangleFilled({x, b.y - S(3)}, {x2, b.y - S(3)}, {(x + x2) / 2, b.y - S((n * 11 + n / 5 + 1) % 4)}, paper);
+    }
+    for (float y = a.y + S(3); y < b.y - S(3); y += S(19)) {
+        float y2 = std::min(y + S(19), b.y - S(3));
+        int n = (int)((y - a.y) / std::max(1.f, S(19)));
+        dl->AddTriangleFilled({a.x + S(3), y}, {a.x + S(3), y2}, {a.x + S((n * 11 + n / 4) % 4), (y + y2) / 2}, paper);
+        dl->AddTriangleFilled({b.x - S(3), y}, {b.x - S(3), y2}, {b.x - S((n * 7 + n / 3 + 1) % 4), (y + y2) / 2}, paper);
+    }
     if (f.title) {
         float by = a.y + f.barH;
-        dl->AddRectFilled(a, {b.x, by}, f.bar, r, ImDrawFlags_RoundCornersTop);
-        dl->AddRectFilled({a.x, by - bt}, {b.x, by}, cInk);
+        bool primary = f.bar != cWell;
+        // A printed strip, inset like a piece of colored paper rather than a window chrome.
+        ImU32 header = primary ? cOrange : cWell;
+        if (std::string(f.title) == "Practice priorities") header = cYellow;
+        dl->AddRectFilled({a.x + S(3), a.y + S(3)}, {b.x - S(3), by}, header);
+        dl->AddRectFilled({a.x, by - S(1)}, {b.x, by}, cRule);
         ImFont* ft = font(BAR);
-        ImU32 tc = cInk;
+        ImU32 tc = primary ? cWin : cInk;
         float right = b.x - S(14);
         if (!f.note.empty()) {
             ImVec2 ns = textSize(LABEL, f.note.c_str());
@@ -801,7 +846,14 @@ void endWindow() {
         dl->AddText(ft, ft->FontSize, {a.x + S(16), a.y + (f.barH - ft->FontSize) / 2}, tc, f.title);
         dl->PopClipRect();
     }
-    outline(dl, a, b, cInk, bt, r);
+    // Two short pieces of colored tape anchor each titled sheet.
+    if (f.title) {
+        ImU32 tape = f.bar == cWell ? cBlue : cYellow;
+        ImVec2 mark[] = {{b.x - S(42), a.y - S(4)}, {b.x - S(10), a.y - S(7)}, {b.x - S(8), a.y + S(1)}, {b.x - S(40), a.y + S(4)}};
+        dl->AddConvexPolyFilled(mark, 4, tape);
+        ImVec2 mark2[] = {{a.x + S(13), b.y - S(3)}, {a.x + S(37), b.y - S(6)}, {a.x + S(39), b.y + S(2)}, {a.x + S(15), b.y + S(5)}};
+        dl->AddConvexPolyFilled(mark2, 4, alpha(cPink, 210));
+    }
 }
 void gap() { ImGui::Dummy({0, 0}); }  // with 8 px item spacing on both sides: 16 px between windows
 void rule() {
@@ -809,7 +861,7 @@ void rule() {
     ImGui::GetWindowDrawList()->AddLine({p.x, p.y}, {p.x + ImGui::GetContentRegionAvail().x, p.y}, cRule);
     ImGui::Dummy({0, S(1)});
 }
-// Buttons: ink outline and a 3 px hard shadow; while held the face moves onto the shadow, like a key going down.
+// Flat buttons with hover and pressed states.
 static bool pressButton(const char* label, ImVec2 size, ImU32 face, ImU32 hover) {
     ImVec2 ts = ImGui::CalcTextSize(label, nullptr, true), pad = ImGui::GetStyle().FramePadding;
     if (size.x <= 0) size.x = ts.x + 2 * pad.x;
@@ -818,18 +870,16 @@ static bool pressButton(const char* label, ImVec2 size, ImU32 face, ImU32 hover)
     bool hit = ImGui::InvisibleButton(label, size);
     bool hov = ImGui::IsItemHovered(), held = ImGui::IsItemActive() && hov;
     if (hov) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-    float sh = S(3), d = held ? sh : 0;
     ImDrawList* dl = ImGui::GetWindowDrawList();
-    ImVec2 a{p.x + d, p.y + d}, b{a.x + size.x, a.y + size.y};
-    if (!held) dl->AddRectFilled({p.x + sh, p.y + sh}, {p.x + size.x + sh, p.y + size.y + sh}, ImGui::GetColorU32(cInk), S(4));
-    dl->AddRectFilled(a, b, ImGui::GetColorU32(hov ? hover : face), S(4));
-    outline(dl, a, b, ImGui::GetColorU32(cInk), S(2), S(4));
-    ImGui::PushStyleColor(ImGuiCol_Text, cInk);
+    ImVec2 a = p, b{a.x + size.x, a.y + size.y};
+    dl->AddRectFilled(a, b, ImGui::GetColorU32(hov ? hover : face));
+    outline(dl, a, b, ImGui::GetColorU32(held ? cOrange : cInk), S(1), 0);
+    ImGui::PushStyleColor(ImGuiCol_Text, face == cOrange ? cWin : cInk);
     ImGui::RenderTextClipped(a, b, label, nullptr, &ts, {0.5f, 0.5f});
     ImGui::PopStyleColor();
     return hit;
 }
-bool button1(const char* label, ImVec2 size) { return pressButton(label, size, cYellow, IM_COL32(250, 206, 112, 255)); }
+bool button1(const char* label, ImVec2 size) { return pressButton(label, size, cOrange, IM_COL32(143, 43, 82, 255)); }
 bool button2(const char* label, ImVec2 size) { return pressButton(label, size, cWin, cWell); }
 float buttonW(const char* label) { return ImGui::CalcTextSize(label, nullptr, true).x + 2 * ImGui::GetStyle().FramePadding.x; }
 void flow(float w, float gap) {
@@ -853,6 +903,7 @@ void cell(ImU32 c, const std::string& s) { ImGui::TableNextColumn(); txt(BODY, c
 void setupStyle(float dpi) {
     gS = dpi;
     ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     static ImVector<ImWchar> ranges;
     ImFontGlyphRangesBuilder b;
     b.AddRanges(io.Fonts->GetGlyphRangesDefault());
@@ -870,7 +921,7 @@ void setupStyle(float dpi) {
         {kFontPlexSansSemi_compressed_data, kFontPlexSansSemi_compressed_size, 15, false},
         {kFontBricolageBold_compressed_data, kFontBricolageBold_compressed_size, 26, true},
         {kFontBricolageBold_compressed_data, kFontBricolageBold_compressed_size, 48, true},
-        {kFontBricolageBold_compressed_data, kFontBricolageBold_compressed_size, 19, true},
+        {kFontPlexSansSemi_compressed_data, kFontPlexSansSemi_compressed_size, 19, false},
     };
     ImFontConfig mc;
     mc.MergeMode = true;
@@ -890,20 +941,20 @@ void setupStyle(float dpi) {
     st.WindowBorderSize = 0, st.ChildBorderSize = 0, st.PopupBorderSize = 2, st.FrameBorderSize = 2;  // ink outline around every input
     st.SelectableTextAlign = {0, 0.5f};
     st.ScaleAllSizes(dpi);
-    st.PopupBorderSize = st.FrameBorderSize = S(2);
+    st.PopupBorderSize = st.FrameBorderSize = S(1);
     st.FrameRounding = st.PopupRounding = S(4), st.GrabRounding = S(2), st.ScrollbarRounding = S(7);
     ImVec4* c = st.Colors;
     auto v4 = [](ImU32 u) { return ImGui::ColorConvertU32ToFloat4(u); };
     for (int i = 0; i < ImGuiCol_COUNT; i++) c[i] = v4(cInk);
     c[ImGuiCol_Text] = v4(cInk), c[ImGuiCol_TextDisabled] = v4(cMuted);
     c[ImGuiCol_WindowBg] = v4(cDesk), c[ImGuiCol_ChildBg] = v4(0), c[ImGuiCol_PopupBg] = v4(cWin);
-    c[ImGuiCol_Border] = v4(cInk), c[ImGuiCol_BorderShadow] = v4(0), c[ImGuiCol_Separator] = v4(cRule);
+    c[ImGuiCol_Border] = v4(cRule), c[ImGuiCol_BorderShadow] = v4(0), c[ImGuiCol_Separator] = v4(cRule);
     c[ImGuiCol_FrameBg] = v4(cWin), c[ImGuiCol_FrameBgHovered] = v4(cWell), c[ImGuiCol_FrameBgActive] = v4(cWell);
     c[ImGuiCol_Button] = v4(cWell), c[ImGuiCol_ButtonHovered] = v4(cYellow), c[ImGuiCol_ButtonActive] = v4(cYellow);  // combo arrows etc.
-    c[ImGuiCol_Header] = v4(cYellow), c[ImGuiCol_HeaderHovered] = v4(IM_COL32(250, 220, 150, 255)), c[ImGuiCol_HeaderActive] = v4(cYellow);
+    c[ImGuiCol_Header] = v4(cYellow), c[ImGuiCol_HeaderHovered] = v4(IM_COL32(249, 220, 167, 255)), c[ImGuiCol_HeaderActive] = v4(cYellow);
     c[ImGuiCol_TableHeaderBg] = v4(cWell), c[ImGuiCol_TableBorderLight] = v4(cRule), c[ImGuiCol_TableBorderStrong] = v4(cInk);
-    c[ImGuiCol_TableRowBg] = v4(cWin), c[ImGuiCol_TableRowBgAlt] = v4(IM_COL32(242, 235, 221, 255));
-    c[ImGuiCol_ScrollbarBg] = v4(cWell), c[ImGuiCol_ScrollbarGrab] = v4(cMuted), c[ImGuiCol_ScrollbarGrabHovered] = v4(cInk), c[ImGuiCol_ScrollbarGrabActive] = v4(cInk);
+    c[ImGuiCol_TableRowBg] = v4(cWin), c[ImGuiCol_TableRowBgAlt] = v4(IM_COL32(240, 235, 216, 255));
+    c[ImGuiCol_ScrollbarBg] = v4(0), c[ImGuiCol_ScrollbarGrab] = v4(cMuted), c[ImGuiCol_ScrollbarGrabHovered] = v4(cInk), c[ImGuiCol_ScrollbarGrabActive] = v4(cInk);
     c[ImGuiCol_SliderGrab] = v4(cYellow), c[ImGuiCol_SliderGrabActive] = v4(cOrange), c[ImGuiCol_CheckMark] = v4(cInk);
     c[ImGuiCol_NavCursor] = v4(cOrange), c[ImGuiCol_ModalWindowDimBg] = v4(alpha(cInk, 120)), c[ImGuiCol_TextSelectedBg] = v4(alpha(cYellow, 160));
 }
@@ -917,17 +968,17 @@ void drawApp(App& a) {
     static int builtFor = -1;
     if (a.scanned && builtFor != a.gen) rc = build(a.res.plays, a.rep.recentFrom), builtFor = a.gen;
     static int tab = 0;
-    if (gForceTab >= 0) tab = gForceTab;
+    if (gForceTab >= 0) { tab = gForceTab; gForceTab = -1; }
     bool ready = a.scanned && !a.res.plays.empty() && !a.osuDir.empty();
 
     float statusH = S(36), barH = menuBar(a, tab, ready);
     ImVec2 wp = ImGui::GetWindowPos(), ws = ImGui::GetWindowSize();
-    desk({wp.x, wp.y + barH}, {wp.x + ws.x, wp.y + ws.y - statusH});
+    desk({wp.x + gSidebar, wp.y + barH}, {wp.x + ws.x, wp.y + ws.y - statusH});
     statusBar(a, statusH);
     // the page between the bars; it scrolls when the window is too small for its minimum layout
-    ImGui::SetCursorPos({0, barH});
+    ImGui::SetCursorPos({gSidebar, barH});
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {S(32), S(24)});
-    ImGui::BeginChild("page", {ws.x, ws.y - barH - statusH}, ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoBackground);
+    ImGui::BeginChild("page", {ws.x - gSidebar, ws.y - barH - statusH}, ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoBackground);
     ImGui::PopStyleVar();
     if (a.viewing && a.viewer) drawViewer(a);
     else if (a.osuDir.empty()) {

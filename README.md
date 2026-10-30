@@ -4,7 +4,7 @@ A personal coach for **osu! stable** (standard mode). It reads the replays and m
 
 ![osu-coach overview](docs/screenshot.png)
 
-It's a single ~1.5 MB Windows exe: no installer, no account, no API key. It only reads files on your PC.
+It's a single Windows exe (including the embedded UI artwork): no installer, no account, no API key. It only reads files on your PC.
 
 ## Watch your replays with the coach
 

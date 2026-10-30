@@ -18,5 +18,6 @@ if not exist build\imgui.lib (
   cl %F% /c third_party\imgui\imgui*.cpp third_party\imgui\backends\imgui_impl_win32.cpp third_party\imgui\backends\imgui_impl_dx11.cpp >nul || exit /b 1
   lib /nologo /out:build\imgui.lib build\imgui*.obj >nul || exit /b 1
 )
-cl %F% src\main.cpp src\gui.cpp src\viewer.cpp %SRC% build\imgui.lib /Fe%OUT% /link /SUBSYSTEM:WINDOWS /ENTRY:wmainCRTStartup d3d11.lib dxgi.lib d3dcompiler.lib %LIBS% >build\build.log || (type build\build.log & exit /b 1)
+rc /nologo /fo build\ui_art.res src\ui_art.rc || exit /b 1
+cl %F% src\main.cpp src\gui.cpp src\overview.cpp src\ui_art.cpp src\viewer.cpp %SRC% build\imgui.lib build\ui_art.res /Fe%OUT% /link /SUBSYSTEM:WINDOWS /ENTRY:wmainCRTStartup d3d11.lib dxgi.lib d3dcompiler.lib windowscodecs.lib %LIBS% >build\build.log || (type build\build.log & exit /b 1)
 echo built %OUT%
