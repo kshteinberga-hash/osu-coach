@@ -116,6 +116,14 @@ static void test_half_not_stream() {
     CHECK(s.streams.empty());
 }
 
+static void test_miss_explained_after_mashing() {
+    // six stray presses between the last hit and an aim miss: the miss is still explained by the press near it
+    float aimX = 300 - 2 * R;
+    auto s = analyze(rep({{1000, 100, 100}, {1050, 0, 0}, {1100, 0, 0}, {1150, 0, 0}, {1200, 0, 0}, {1250, 0, 0}, {1300, 0, 0},
+                          {1490, aimX, 100}}), map3(), 4);
+    CHECK(s.objs.size() >= 2 && s.objs[1].judge == 0 && s.objs[1].cause == AIM);
+}
+
 void analyzeTests() {
     test_half_not_stream();
     test_perfect();
@@ -127,5 +135,6 @@ void analyzeTests() {
     test_quit();
     test_degenerate();
     test_stream();
+    test_miss_explained_after_mashing();
     test_zero_gap();
 }

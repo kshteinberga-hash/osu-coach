@@ -13,8 +13,9 @@ std::string narrow(const std::wstring& w) {
     return s;
 }
 
-ScanResult scan(const std::wstring& dir, std::atomic<int>* done, std::atomic<int>* total) {
+ScanResult scan(const std::wstring& dir, std::atomic<int>* done, std::atomic<int>* total, const std::atomic<bool>* cancel) {
     ScanResult res;
+    res.dir = dir;
     res.dbOk = readOsuDb(dir, res.db);
     std::unordered_map<std::string, const DbMap*> byMd5;
     for (auto& m : res.db) byMd5[m.md5] = &m;
@@ -42,7 +43,7 @@ ScanResult scan(const std::wstring& dir, std::atomic<int>* done, std::atomic<int
     };
     auto work = [&] {
         Replay r;
-        for (size_t i; (i = next++) < files.size();) {
+        for (size_t i; (i = next++) < files.size() && !(cancel && *cancel);) {
             if (done) ++*done;
             if (!readOsr(files[i], r, false)) { corrupt++; continue; }
             if (r.mode != 0) { other++; continue; }
@@ -67,12 +68,18 @@ ScanResult scan(const std::wstring& dir, std::atomic<int>* done, std::atomic<int
     return res;
 }
 
-std::vector<ObjRes> reanalyze(const std::wstring& dir, const PlayStats& p, const std::vector<DbMap>& db) {
-    auto m = std::find_if(db.begin(), db.end(), [&](const DbMap& d) { return d.md5 == p.md5; });
+const DbMap* findMap(const std::vector<DbMap>& db, const std::string& md5) {
+    auto m = std::find_if(db.begin(), db.end(), [&](const DbMap& d) { return d.md5 == md5; });
+    return m == db.end() ? nullptr : &*m;
+}
+
+std::wstring replayPath(const std::wstring& dir, const PlayStats& p) { return dir + L"\\Data\\r\\" + p.file; }
+
+std::vector<ObjRes> reanalyze(const std::wstring& replay, const std::wstring& map, float stars) {
     Replay r;
     Beatmap b;
-    if (m == db.end() || !readOsr(dir + L"\\Data\\r\\" + p.file, r, true) || !loadOsu(m->path, b)) return {};
-    return analyze(r, b, p.stars).objs;
+    if (map.empty() || !readOsr(replay, r, true) || !loadOsu(map, b)) return {};
+    return analyze(r, b, stars).objs;
 }
 
 static std::string jsonEscape(std::string_view s) {

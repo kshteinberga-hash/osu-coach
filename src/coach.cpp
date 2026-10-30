@@ -9,6 +9,7 @@
 #include <mutex>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <windows.h>
 
 const char* const kSkillName[NSKILL] = {"Timing", "Jumps", "Big jumps", "Streams", "Speed", "Reading", "Stamina"};
@@ -151,17 +152,18 @@ Report coach(const std::vector<PlayStats>& plays, std::vector<Day>& hist, int64_
             auto& p = plays[i];
             if (p.stars <= 0) continue;
             int tot = total(p);
-            double base = ppEstimate(p.stars, p.od, tot, p.acc, p.gmiss);
+            float od = (80 - hitWindow300(p.od) / p.rate) / 6;  // the OD whose 300 window matches the real one (DT/HT)
+            double base = ppEstimate(p.stars, od, tot, p.acc, p.gmiss);
             if (s == TIMING) {
                 if (bestUr <= 0 || p.err.n < 2) continue;
                 double w300 = hitWindow300(p.od) / p.rate, sd = bestUr / 10, m = p.err.mean();  // real ms, like sd and m
                 double p300 = phi((w300 - m) / sd) - phi((-w300 - m) / sd);
                 double acc = (p300 * 300 + (1 - p300) * 100) / 300 * (tot - p.gmiss) / tot;
-                cost += std::max(0.0, ppEstimate(p.stars, p.od, tot, (float)acc, p.gmiss) - base);
+                cost += std::max(0.0, ppEstimate(p.stars, od, tot, (float)acc, p.gmiss) - base);
             } else {
                 int k = std::min<int>(p.gmiss, p.skMiss[s]);
                 float acc = std::min(1.f, p.acc + 300.f * k / (300.f * tot));
-                cost += ppEstimate(p.stars, p.od, tot, acc, p.gmiss - k) - base;
+                cost += ppEstimate(p.stars, od, tot, acc, p.gmiss - k) - base;
             }
         }
         if (cost <= 0.05) continue;
@@ -493,10 +495,11 @@ static std::unordered_map<std::string, MapFeat> gFeat;
 void cacheFeatures(const std::string& md5, const MapFeat& f) { std::lock_guard g(gFeatMu); gFeat[md5] = f; }
 
 std::vector<Suggestion> suggest(const std::vector<DbMap>& db, const std::vector<PlayStats>& plays, Skill weak,
-                                float lo, float hi, float streamBpm, int64_t now) {
+                                float lo, float hi, float streamBpm, int64_t now, const std::atomic<bool>* cancel) {
     std::vector<const DbMap*> cand, todo;
+    std::unordered_set<std::string_view> seen;  // a map imported twice is in osu!.db twice
     for (auto& m : db)
-        if (float s = starsFor(m, 0); s >= lo && s <= hi) cand.push_back(&m);
+        if (float s = starsFor(m, 0); s >= lo && s <= hi && seen.insert(m.md5).second) cand.push_back(&m);
     {
         std::lock_guard g(gFeatMu);
         for (auto m : cand) if (!gFeat.count(m->md5)) todo.push_back(m);
@@ -504,7 +507,7 @@ std::vector<Suggestion> suggest(const std::vector<DbMap>& db, const std::vector<
     std::atomic<size_t> next = 0;
     auto work = [&] {
         Beatmap b;
-        for (size_t i; (i = next++) < todo.size();)
+        for (size_t i; (i = next++) < todo.size() && !(cancel && *cancel);)
             cacheFeatures(todo[i]->md5, loadOsu(todo[i]->path, b) ? features(b) : MapFeat{});
     };
     std::vector<std::thread> pool(std::max(1u, std::thread::hardware_concurrency()));

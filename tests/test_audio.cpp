@@ -1,5 +1,6 @@
 #include "t.h"
 #include <windows.h>
+#include <algorithm>
 #include <cstdlib>
 #include <filesystem>
 #include "../src/audio.h"

@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include "analyze.h"
 
 extern const char* const kSkillName[NSKILL];
@@ -40,6 +41,7 @@ MapFeat features(const Beatmap& b);
 void cacheFeatures(const std::string& md5, const MapFeat& f);
 struct Suggestion { const DbMap* map; float stars, score; std::string why; };
 std::vector<Suggestion> suggest(const std::vector<DbMap>& db, const std::vector<PlayStats>& plays, Skill weak,
-                                float lo, float hi, float streamBpm, int64_t nowMs);  // best 5
+                                float lo, float hi, float streamBpm, int64_t nowMs,
+                                const std::atomic<bool>* cancel = nullptr);  // best 5; stops early (fewer maps scored) on cancel
 bool loadHistory(const std::wstring& path, std::vector<Day>& out);  // corrupt -> renamed to .bak, empty
 void saveHistory(const std::wstring& path, const std::vector<Day>& days);

@@ -416,7 +416,9 @@ std::string whereStr(const ObjRes& o, float beat) {
     return s;
 }
 
-void missList(const PlayStats& p, const std::vector<ObjRes>& objs, float h, int64_t key) {
+void missList(const PlayStats& p, const std::vector<ObjRes>* loaded, float h, int64_t key) {
+    if (!loaded) { txt(BODY, cMuted, "Reading the replay\xE2\x80\xA6"); return; }
+    auto& objs = *loaded;
     if (objs.empty()) { txt(BODY, cMuted, "The replay or its map is no longer on your PC, so the note-by-note list is unavailable."); return; }
     float beat = p.bpm > 0 ? 60000 / p.bpm : 500;
     static std::vector<int> miss;  // indexes of the misses; only the visible rows get explained each frame

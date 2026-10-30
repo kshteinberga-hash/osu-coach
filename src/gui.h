@@ -23,9 +23,13 @@ struct App {
     std::vector<Suggestion> pSugg;
     float pBpm = 0;
     void* hwnd = nullptr;
-    std::vector<ObjRes> selObjs;  // per-note results of the selected play, see selectedObjs()
-    int selObjsFor = -1, selObjsGen = -1;
-    const std::vector<ObjRes>& selectedObjs();
+    std::atomic<bool> quitting = false;  // set on exit: scan and suggest stop early
+    // per-note results of the selected play, read on a worker: it fills p* and sets objsReady, poll() moves them in
+    std::vector<ObjRes> selObjs, pObjs;
+    int selObjsFor = -1, selObjsGen = -1, pObjsFor = -1, pObjsGen = -1;
+    bool objsBusy = false;  // a read is running; only the UI thread touches this
+    std::atomic<bool> objsReady = false;
+    const std::vector<ObjRes>* selectedObjs();  // nullptr while the selected play is still being read
     void startScan();
     void startSuggest();
     void pickFolder();

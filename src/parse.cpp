@@ -107,7 +107,7 @@ bool parseOsu(std::string_view text, Beatmap& b) {
     }
     if (!haveAr) b.ar = b.od;
     b.title = std::string(artist) + " - " + std::string(title) + " [" + std::string(version) + "]";
-    std::stable_sort(tps.begin(), tps.end(), [](const TP& a, const TP& c) { return a.t < c.t; });
+    std::stable_sort(tps.begin(), tps.end(), [](const TP& a, const TP& c) { return a.t < c.t || (a.t == c.t && a.unin > c.unin); });  // tempo first: it resets SV
     // main BPM: uninherited point that lasts longest (until the next uninherited point or the last object)
     double lastT = b.objs.empty() ? 0 : b.objs.back().t, best = -1;
     std::vector<const TP*> un;
@@ -275,7 +275,7 @@ static bool decodeFrames(const uint8_t* src, size_t n, std::vector<Frame>& out) 
     if (n < 13) return false;
     uint64_t size;  // header: 5 bytes of properties, then the decoded size (all ones when unknown)
     memcpy(&size, src + 5, 8);
-    bool known = size < (256u << 20);
+    bool known = size > 0 && size < (256u << 20);  // 0 would silently empty the replay: guess instead
     size_t cap = known ? (size_t)size : n * 10 + 4096;
     std::string txt;
     for (int tries = 0; tries < 6; tries++, cap *= 2) {  // a guessed size may be too small: retry larger

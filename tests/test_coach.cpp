@@ -164,6 +164,22 @@ static void test_suggest() {
     auto s = suggest(db, {}, JUMPS, 3.5f, 4.5f, 0, NOW);
     CHECK(s.size() == 2);
     if (s.size() == 2) CHECK(s[0].map == &db[1] && s[1].map == &db[0] && !s[0].why.empty());
+    db.push_back(db[1]);  // the same map imported into a second folder
+    CHECK(suggest(db, {}, JUMPS, 3.5f, 4.5f, 0, NOW).size() == 2);
+}
+
+static void test_dt_accuracy_pp() {
+    // DT tightens the real hit window: misses cost more accuracy pp than the same play at 1x
+    auto jumpPp = [](float rate) {
+        std::vector<PlayStats> ps;
+        for (int i = 0; i < 10; i++) ps.push_back(mk(NOW - DAY + i * 1000, 4, 100, 5, false, 0.95f)), ps.back().rate = rate;
+        std::vector<Day> h;
+        Report r = coach(ps, h, NOW);
+        for (int i = 0; i < r.nTop; i++) if (r.top[i].s == JUMPS) return r.top[i].pp;
+        return -1.0;
+    };
+    double nm = jumpPp(1), dt = jumpPp(1.5f);
+    CHECK(nm > 0 && dt > nm);
 }
 
 static bool has(const std::string& s, const char* w) { return s.find(w) != std::string::npos; }
@@ -271,6 +287,7 @@ void coachTests() {
     test_gallop();
     test_features();
     test_suggest();
+    test_dt_accuracy_pp();
     test_pp();
     test_radar_neutral();
     test_radar_half();

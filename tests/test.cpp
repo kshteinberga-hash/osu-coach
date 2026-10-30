@@ -1,5 +1,7 @@
 #include "t.h"
 #include "../src/scan.h"
+#include <atomic>
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
@@ -33,6 +35,14 @@ static void test_osu_old_timing() {
                    "[HitObjects]\n100,100,2000,2,0,L|200:100,2,140\n", b));
     NEAR(b.bpm, 120, 0.01);
     CHECK(b.objs.size() == 1 && b.objs[0].end == 2500);
+}
+
+static void test_osu_tie_order() {
+    // a slider-speed point written before the tempo point at the same time still applies (2x: 140 px = 250 ms, not 500)
+    Beatmap b;
+    CHECK(parseOsu("[Difficulty]\nSliderMultiplier:1.4\n[TimingPoints]\n0,-50,4,2,0,50,0,0\n0,500,4,2,0,50,1,0\n"
+                   "[HitObjects]\n100,100,2000,2,0,L|200:100,1,140\n", b));
+    CHECK(b.objs.size() == 1 && b.objs[0].end == 2250);
 }
 
 static void test_osu_bom_fullwidth() {
@@ -101,16 +111,22 @@ static const unsigned char kFramesLzma[] = {  // LZMA-alone stream (python lzma.
     0x9d, 0xbb, 0x88, 0x5d, 0xc5, 0x80, 0x8f, 0xf2, 0xa0, 0x59, 0x54, 0x60, 0xdc, 0xa1, 0xac, 0x0b, 0x74, 0x04, 0x72, 0x7f,
     0xff, 0x45, 0x09, 0xa7, 0x00};
 
+// A replay of kFramesLzma: "0|256|-500|0,-1|256|-500|0," then 400 frames 16 ms apart alternating keys 0/5, then the
+// seed frame. size = the LZMA header's decoded-size field (-1 = unknown, as python writes it).
+static std::string framesOsr(int64_t size = -1) {
+    std::string z((const char*)kFramesLzma, sizeof kFramesLzma);
+    memcpy(z.data() + 5, &size, 8);
+    std::string b;
+    put<uint8_t>(b, 0); put<int>(b, 20240101); uleb(b, "0123456789abcdef0123456789abcdef"); uleb(b, "p"); uleb(b, "");
+    for (int i = 0; i < 6; i++) put<uint16_t>(b, 1);
+    put<int>(b, 0); put<uint16_t>(b, 0); put<uint8_t>(b, 0); put<int>(b, 0); uleb(b, ""); put<int64_t>(b, 0);
+    put<int>(b, (int)z.size());
+    return b + z;
+}
+
 static void test_osr_frames() {
-    // "0|256|-500|0,-1|256|-500|0," then 400 frames 16 ms apart alternating keys 0/5, then the seed frame
-    for (bool knownSize : {false, true}) {
-        std::string z((const char*)kFramesLzma, sizeof kFramesLzma);
-        if (knownSize) { int64_t n = 5240; memcpy(z.data() + 5, &n, 8); }  // the size field osu! writes
-        std::string b;
-        put<uint8_t>(b, 0); put<int>(b, 20240101); uleb(b, "0123456789abcdef0123456789abcdef"); uleb(b, "p"); uleb(b, "");
-        for (int i = 0; i < 6; i++) put<uint16_t>(b, 1);
-        put<int>(b, 0); put<uint16_t>(b, 0); put<uint8_t>(b, 0); put<int>(b, 0); uleb(b, ""); put<int64_t>(b, 0);
-        put<int>(b, (int)z.size()); b += z;
+    for (int64_t size : {-1LL, 5240LL, 0LL}) {  // unknown, the size osu! writes, and a zero that must not empty the replay
+        std::string b = framesOsr(size);
         Replay r;
         CHECK(parseOsr(b, r, true));
         CHECK(r.frames.size() == 400);  // the two (256, -500) placeholder frames are dropped
@@ -191,13 +207,35 @@ static void test_deleted_map() {
     put<int>(b, 0); put<uint16_t>(b, 0); put<uint8_t>(b, 0); put<int>(b, 0); uleb(b, ""); put<int64_t>(b, 0); put<int>(b, 0);
     { std::ofstream f(dir / L"Data" / L"r" / L"a.osr", std::ios::binary); f << b; }
     ScanResult r = scan(dir.wstring());
-    CHECK(r.dbOk && r.db.empty());
+    CHECK(r.dbOk && r.db.empty() && r.dir == dir.wstring());
     CHECK(r.deleted == 1 && r.plays.empty());
+    std::atomic<bool> stop = true;  // cancelled before the first replay
+    r = scan(dir.wstring(), nullptr, nullptr, &stop);
+    CHECK(r.deleted == 0 && r.plays.empty());
     db.clear();  // a garbage beatmap count must fail the read, not throw bad_alloc
     put<int>(db, 20260924); put<int>(db, 0); put<uint8_t>(db, 1); put<int64_t>(db, 0); uleb(db, "x"); put<int>(db, 0x7fffffff);
     { std::ofstream f(dir / L"osu!.db", std::ios::binary); f << db; }
     std::vector<DbMap> maps;
     CHECK(!readOsuDb(dir.wstring(), maps));
+    std::filesystem::remove_all(dir);
+}
+
+static void test_reanalyze() {
+    auto dir = std::filesystem::temp_directory_path() / L"osu-coach-reanalyze";
+    std::filesystem::create_directories(dir / L"Data" / L"r");
+    { std::ofstream f(dir / L"a.osu", std::ios::binary); f << kMap; }
+    { std::ofstream f(dir / L"Data" / L"r" / L"p.osr", std::ios::binary); f << framesOsr(); }
+    PlayStats p{};
+    p.file = L"p.osr", p.md5 = "m";
+    std::vector<DbMap> db(1);
+    db[0].md5 = "m", db[0].path = (dir / L"a.osu").wstring();
+    CHECK(findMap(db, "m") == &db[0] && !findMap(db, "x"));
+    std::wstring replay = replayPath(dir.wstring(), p), map = findMap(db, "m")->path;
+    CHECK(replay == (dir / L"Data" / L"r" / L"p.osr").wstring());
+    auto objs = reanalyze(replay, map, 4);
+    CHECK(objs.size() == 2 && objs[0].t == 1000 && objs[1].slider);  // the circle and the slider head; spinners are skipped
+    CHECK(reanalyze(replay, L"", 4).empty());                         // map not in osu!.db
+    CHECK(reanalyze(replayPath(dir.wstring(), PlayStats{}), map, 4).empty());
     std::filesystem::remove_all(dir);
 }
 
@@ -219,6 +257,7 @@ int main() {
     test_deleted_map();
     test_osu_basic();
     test_osu_old_timing();
+    test_osu_tie_order();
     test_osu_bom_fullwidth();
     test_osu_degenerate();
     test_osu_ar_default();
@@ -228,6 +267,7 @@ int main() {
     test_osr_long_lifebar();
     test_real_files();
     test_unicode_path();
+    test_reanalyze();
     test_dump_escapes();
     void analyzeTests(); analyzeTests();
     void curveTests(); curveTests();

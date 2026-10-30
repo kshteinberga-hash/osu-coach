@@ -33,14 +33,15 @@ void App::startScan() {
     busy = true, done = 0, total = 0;
     // the UI can change these while the worker runs: copy them
     std::thread([this, dir = osuDir, lo = lo, hi = hi, skill = trainSkill] {
-        pRes = scan(dir, &done, &total);
+        pRes = scan(dir, &done, &total, &quitting);
+        if (quitting) { scanReady = true; return; }  // closing: a partial scan must not be merged into history.json
         std::wstring hp = exeDir() + L"\\history.json";
         std::vector<Day> hist;
         loadHistory(hp, hist);
         pRep = coach(pRes.plays, hist, nowMs());
         saveHistory(hp, pRep.days);
         pBpm = comfortableStreamBpm(pRes.plays, pRep.recentFrom);
-        pSugg = suggest(pRes.db, pRes.plays, trainFor(skill, pRep), lo, hi, pBpm, nowMs());
+        pSugg = suggest(pRes.db, pRes.plays, trainFor(skill, pRep), lo, hi, pBpm, nowMs(), &quitting);
         scanReady = true;
         PostMessageW((HWND)hwnd, WM_APP, 0, 0);
     }).detach();
@@ -50,7 +51,7 @@ void App::startSuggest() {
     if (busy || !scanned) return;
     busy = true;
     std::thread([this, lo = lo, hi = hi, skill = trainSkill] {
-        pSugg = suggest(res.db, res.plays, trainFor(skill, rep), lo, hi, streamBpm, nowMs());
+        pSugg = suggest(res.db, res.plays, trainFor(skill, rep), lo, hi, streamBpm, nowMs(), &quitting);
         suggReady = true;
         PostMessageW((HWND)hwnd, WM_APP, 0, 0);
     }).detach();
@@ -62,22 +63,32 @@ void App::poll() {
         scanned = true, selPlay = -1, gen++, busy = false;
     }
     if (suggReady.exchange(false)) sugg = std::move(pSugg), busy = false;
+    if (objsReady.exchange(false)) selObjs = std::move(pObjs), selObjsFor = pObjsFor, selObjsGen = pObjsGen, objsBusy = false;
 }
 
 void App::openViewer() {
     if (selPlay < 0 || selPlay >= (int)res.plays.size()) return;
     viewer = std::make_unique<Viewer>();
-    viewer->open(osuDir, res.plays[selPlay], res.db);
+    viewer->open(res.dir, res.plays[selPlay], res.db);
     viewing = true;
 }
 bool viewerWantsFrames(const App& a) { return a.viewing && a.viewer && a.viewer->clock.running; }
 
-const std::vector<ObjRes>& App::selectedObjs() {
-    if (selObjsFor != selPlay || selObjsGen != gen) {
-        selObjs = selPlay >= 0 && selPlay < (int)res.plays.size() ? reanalyze(osuDir, res.plays[selPlay], res.db) : std::vector<ObjRes>{};
-        selObjsFor = selPlay, selObjsGen = gen;
+const std::vector<ObjRes>* App::selectedObjs() {
+    if (selObjsFor == selPlay && selObjsGen == gen) return &selObjs;
+    if (selPlay < 0 || selPlay >= (int)res.plays.size()) return selObjs.clear(), selObjsFor = selPlay, selObjsGen = gen, &selObjs;
+    if (!objsBusy) {  // one read at a time; a stale result is dropped by the check above and the next call starts over
+        objsBusy = true;
+        auto& p = res.plays[selPlay];
+        const DbMap* m = findMap(res.db, p.md5);
+        // copies only: poll() may replace res while this runs
+        std::thread([this, replay = replayPath(res.dir, p), map = m ? m->path : std::wstring(), stars = p.stars, sel = selPlay, g = gen] {
+            pObjs = reanalyze(replay, map, stars), pObjsFor = sel, pObjsGen = g;
+            objsReady = true;
+            PostMessageW((HWND)hwnd, WM_APP, 0, 0);
+        }).detach();
     }
-    return selObjs;
+    return nullptr;
 }
 
 void App::pickFolder() {
@@ -218,6 +229,7 @@ static int dumpMode(int argc, wchar_t** argv) {
         if (!wcscmp(argv[i], L"--dump")) out = argv[i + 1];
         if (!wcscmp(argv[i], L"--osu")) dir = argv[i + 1];
     }
+    if (out.empty()) { printf("usage: osu-coach --dump OUT.jsonl [--osu PATH]\n"); return 1; }
     if (dir.empty()) dir = findOsuDir();
     if (dir.empty()) { printf("osu! folder not found, pass --osu PATH\n"); return 1; }
     ScanResult r = scan(dir);
@@ -272,6 +284,7 @@ int wmain(int argc, wchar_t** argv) {
     RegisterClassExW(&wc);
     float dpi = gDpi = ImGui_ImplWin32_GetDpiScaleForMonitor(MonitorFromPoint({0, 0}, MONITOR_DEFAULTTOPRIMARY));
     HWND hwnd = CreateWindowW(L"osu-coach", L"osu-coach", WS_OVERLAPPEDWINDOW, 100, 100, (int)(1280 * dpi), (int)(820 * dpi), nullptr, nullptr, wc.hInstance, nullptr);
+    if (!hwnd) { MessageBoxW(nullptr, L"Could not create the window.", L"osu-coach", MB_ICONERROR); return 1; }
     if (!createDevice(hwnd)) { MessageBoxW(nullptr, L"Direct3D 11 is not available.", L"osu-coach", MB_ICONERROR); return 1; }
     ShowWindow(hwnd, shotDir.empty() ? SW_SHOWDEFAULT : SW_HIDE);
     UpdateWindow(hwnd);
@@ -320,11 +333,12 @@ int wmain(int argc, wchar_t** argv) {
             if (tab == 5 && shot % 4 == 0)
                 for (int i = (int)app.res.plays.size() - 1; i >= 0 && app.selPlay < 0; i--)
                     if (app.res.plays[i].gmiss > 0) app.selPlay = i;
-            saveShot = shot++ % 4 == 3;
+            saveShot = !app.objsBusy && shot++ % 4 == 3;  // hold the frame until the Plays tab's miss list has loaded
         }
         renderFrame(app, !saveShot ? L"" : shotDir + (shot / 4 - 1 == 8 ? std::wstring(L"\\viewer.bmp") : L"\\tab" + std::to_wstring(shot / 4 - 1) + L".bmp"));
     }
-    while (app.busy) app.poll(), Sleep(20);  // only poll() clears busy: let a running scan finish and land
+    app.quitting = true;  // workers stop at their next replay or map
+    while (app.busy || app.objsBusy) app.poll(), Sleep(20);  // only poll() clears these: let running workers land
     ImGui_ImplDX11_Shutdown();
     ImGui_ImplWin32_Shutdown();
     ImGui::DestroyContext();

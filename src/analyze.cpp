@@ -115,10 +115,12 @@ PlayStats analyze(const Replay& r, const Beatmap& b, float stars) {
         }
         // nearest press in the 50 window (used or not), to explain misses
         int near = -1;
-        for (size_t j = pi >= 5 ? pi - 5 : 0; j < std::min(ps.size(), pi + 5); j++) {
+        auto consider = [&](size_t j) {
             float d = std::fabs((float)(ps[j].t - o.t));
             if (d <= w50 && (near < 0 || d < std::fabs((float)(ps[near].t - o.t)))) near = (int)j;
-        }
+        };
+        for (size_t j = pi; j-- > 0 && ps[j].t >= o.t - w50;) consider(j);  // presses are in time order
+        for (size_t j = pi; j < ps.size() && ps[j].t <= o.t + w50; j++) consider(j);
         if (hitIdx >= 0 && !early) {
             const Press& p = ps[hitIdx];
             float a = std::fabs((float)(p.t - o.t));
