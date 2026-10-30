@@ -83,7 +83,8 @@ std::string fmt(const char* f, ...) {
 
 Report coach(const std::vector<PlayStats>& plays, std::vector<Day>& hist, int64_t now) {
     Report r{};
-    // 1. fold this scan into the daily history (a stored day is replaced only by one with at least as many plays)
+    // 1. fold this scan into the daily history. A stored date is replaced, all bins at once, only when this scan has
+    //    at least as many plays on it: deleted replays survive, and plays that moved bin (star rating recalculated) do not count twice.
     std::map<std::pair<int, int>, Day> fresh;
     for (auto& p : plays) {
         Day& d = fresh[{ymd(p.when), binOf(p.stars)}];
@@ -93,10 +94,15 @@ Report coach(const std::vector<PlayStats>& plays, std::vector<Day>& hist, int64_
         for (int s = 0; s < NSKILL; s++) d.obj[s] += c.obj[s], d.miss[s] += c.miss[s];
         d.es += p.err.s, d.ess += p.err.ss, d.en += p.err.n;
     }
+    std::map<int, int> freshPlays, storedPlays;
+    for (auto& [k, d] : fresh) freshPlays[k.first] += d.plays;
+    for (auto& d : hist) storedPlays[d.date] += d.plays;
+    auto replaced = [&](int date) { return freshPlays.count(date) && freshPlays[date] >= storedPlays[date]; };
     std::map<std::pair<int, int>, Day> all;
-    for (auto& d : hist) all[{d.date, d.bin}] = d;
+    for (auto& d : hist)
+        if (!replaced(d.date)) all[{d.date, d.bin}] = d;
     for (auto& [k, d] : fresh)
-        if (!all.count(k) || all[k].plays <= d.plays) all[k] = d;
+        if (replaced(k.first)) all[k] = d;
     hist.clear();
     for (auto& [k, d] : all) hist.push_back(d);
     r.days = hist;
@@ -172,7 +178,7 @@ Report coach(const std::vector<PlayStats>& plays, std::vector<Day>& hist, int64_
             double base = ppEstimate(p.stars, p.od, tot, p.acc, p.gmiss);
             if (s == TIMING) {
                 if (bestUr <= 0 || p.err.n < 2) continue;
-                double w300 = 80 - 6 * p.od, sd = bestUr / 10, m = p.err.mean();
+                double w300 = (80 - 6 * p.od) / p.rate, sd = bestUr / 10, m = p.err.mean();  // real ms, like sd and m
                 double p300 = phi((w300 - m) / sd) - phi((-w300 - m) / sd);
                 double acc = (p300 * 300 + (1 - p300) * 100) / 300 * (tot - p.gmiss) / tot;
                 cost += std::max(0.0, ppEstimate(p.stars, p.od, tot, (float)acc, p.gmiss) - base);

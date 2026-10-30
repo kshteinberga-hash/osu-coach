@@ -255,7 +255,7 @@ int wmain(int argc, wchar_t** argv) {
         if (saveShot) saveBackbuffer(shotDir + L"\\tab" + std::to_wstring(shot / 4 - 1) + L".bmp");
         gSwap->Present(1, 0);
     }
-    while (app.busy) Sleep(20);
+    while (app.busy) app.poll(), Sleep(20);  // only poll() clears busy: let a running scan finish and land
     ImGui_ImplDX11_Shutdown();
     ImGui_ImplWin32_Shutdown();
     ImGui::DestroyContext();

@@ -25,6 +25,15 @@ static void test_osu_basic() {
     CHECK(b.objs[2].end == 6000);
 }
 
+static void test_osu_old_timing() {
+    // v5: no uninherited column, the inherited point is marked only by its negative beat length
+    Beatmap b;
+    CHECK(parseOsu("osu file format v5\n[Difficulty]\nSliderMultiplier:1.4\n[TimingPoints]\n0,500,4,2,0,50\n0,-50,4,2,0,50\n"
+                   "[HitObjects]\n100,100,2000,2,0,L|200:100,2,140\n", b));
+    NEAR(b.bpm, 120, 0.01);
+    CHECK(b.objs.size() == 1 && b.objs[0].end == 2500);
+}
+
 static void test_osu_degenerate() {
     Beatmap b;
     CHECK(parseOsu("[General]\nMode: 0\n[Difficulty]\nOverallDifficulty:7\n[HitObjects]\n10,10,500,1,0\n", b));
@@ -130,6 +139,7 @@ static void test_deleted_map() {
 int main() {
     test_deleted_map();
     test_osu_basic();
+    test_osu_old_timing();
     test_osu_degenerate();
     test_osu_ar_default();
     test_osr_header();

@@ -54,7 +54,8 @@ bool parseOsu(std::string_view text, Beatmap& b) {
         if (sec == "[TimingPoints]") {
             std::string_view f[8];
             int n = split(line, ',', f, 8);
-            if (n >= 2) tps.push_back({num(f[0]), num(f[1]), n < 7 || trim(f[6]) == "1"});
+            double len = n >= 2 ? num(f[1]) : 0;  // before v6 there is no uninherited column: negative length = inherited
+            if (n >= 2) tps.push_back({num(f[0]), len, n >= 7 ? trim(f[6]) == "1" : len > 0});
         } else if (sec == "[HitObjects]") {
             std::string_view f[8];
             int n = split(line, ',', f, 8);

@@ -8,7 +8,7 @@ constexpr int64_t DAY = 86400000LL, NOW = 1793318400000LL;
 
 PlayStats mk(int64_t when, float stars, int nJump, int jumpMiss, bool fc, float acc) {
     PlayStats p{};
-    p.when = when, p.stars = stars, p.od = 8, p.acc = acc, p.gmiss = fc ? 0 : (uint16_t)std::max(1, jumpMiss);
+    p.when = when, p.stars = stars, p.od = 8, p.rate = 1, p.acc = acc, p.gmiss = fc ? 0 : (uint16_t)std::max(1, jumpMiss);
     for (int i = 0; i < nJump + 50; i++) {
         ObjRes o{};
         bool jump = i < nJump;
@@ -88,6 +88,33 @@ static void test_history_roundtrip() {
     std::filesystem::remove_all(dir);
 }
 
+static void test_history_rebin() {
+    // the same plays come back in another star bin (star rating recalculated): the date is replaced, not counted twice
+    std::vector<PlayStats> ps{mk(NOW - DAY, 4.1f, 100, 5, false, 0.95f), mk(NOW - DAY + 1000, 4.1f, 100, 5, false, 0.95f)};
+    std::vector<Day> h;
+    coach(ps, h, NOW);
+    CHECK(h.size() == 1);
+    for (auto& p : ps) p.stars = 4.6f;
+    coach(ps, h, NOW);
+    CHECK(h.size() == 1 && h[0].bin == 18 && h[0].plays == 2);
+    ps.pop_back();  // a replay was deleted: the fuller stored day wins
+    coach(ps, h, NOW);
+    CHECK(h.size() == 1 && h[0].plays == 2);
+}
+
+static void test_timing_rate() {
+    // the 300 window is 1.5x tighter in real time on DT, so a perfect-UR play gains less from better timing
+    auto timingPp = [](float rate) {
+        std::vector<PlayStats> ps;
+        for (int i = 0; i < 10; i++) ps.push_back(mk(NOW - DAY + i * 1000, 4, 0, 0, true, 0.95f)), ps.back().rate = rate;
+        std::vector<Day> h;
+        Report r = coach(ps, h, NOW);
+        return r.nTop && r.top[0].s == TIMING ? r.top[0].pp : -1;
+    };
+    double nm = timingPp(1), dt = timingPp(1.5f);
+    CHECK(nm > 0 && dt > 0 && dt < nm);
+}
+
 static void test_verdict() {
     std::vector<PlayStats> ps;
     for (int i = 0; i < 6; i++) ps.push_back(mk(NOW - 10 * DAY + i * 1000, 4.0f, 50, 2, i < 3, 0.97f));
@@ -136,5 +163,7 @@ void coachTests() {
     test_radar_half();
     test_no_baseline();
     test_history_roundtrip();
+    test_history_rebin();
+    test_timing_rate();
     test_verdict();
 }
