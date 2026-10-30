@@ -274,6 +274,12 @@ void tabOverview(App& a, const Recent& rc) {
             if (i) ImGui::Dummy({0, S(4)}), rule(), ImGui::Dummy({0, S(4)});
             workItem(i, r.top[i], rc.plays);
         }
+        for (auto& h : r.habits) {  // how you practise, not what: shown after the skills
+            ImGui::Dummy({0, S(4)}), rule(), ImGui::Dummy({0, S(4)});
+            txt(LABEL, cMuted, "Practice habit");
+            txt(TITLE, cInk, h.title, true);
+            txt(BODY, cInk, h.text, true);
+        }
         endWindow();
     };
     if (ImGui::GetContentRegionAvail().x < S(900)) {  // narrow: skills on top, the list under it, and the page scrolls

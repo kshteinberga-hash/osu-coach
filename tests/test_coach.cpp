@@ -263,12 +263,50 @@ static void test_gallop() {
     CHECK(sum.diag == D_GALLOP && has(sum.title, "galloping (2 of 3)") && sum.practice == e.practice);
 }
 
+static PlayStats hp(int64_t when, const char* md5, float acc, float stars = 4) {
+    PlayStats p{};
+    p.when = when, p.md5 = md5, p.title = md5, p.acc = acc, p.stars = stars;
+    return p;
+}
+
+static void test_habits() {
+    const int64_t MIN = 60000;
+    std::vector<PlayStats> ps;
+    for (int i = 0; i < 12; i++) ps.push_back(hp(NOW - DAY + i * 3 * MIN, i < 7 ? "same" : i % 2 ? "a" : "b", 0.95f));
+    auto h = habits(ps, 0, NOW);
+    CHECK(h.size() == 1 && h[0].title == "Too many retries of one map" && has(h[0].text, "same 7 times in a row"));
+
+    ps.clear();
+    for (int i = 0; i < 12; i++) ps.push_back(hp(NOW - DAY + i * 3 * MIN, i % 2 ? "a" : "b", i < 8 ? 0.80f : 0.95f));
+    h = habits(ps, 0, NOW);
+    CHECK(h.size() == 1 && h[0].title == "Most of your maps are too hard right now" && has(h[0].text, "8 of your last 12"));
+
+    // two 2-hour sessions, 13 plays each 10 minutes apart: 96% at the start, 92% at the end, same stars
+    ps.clear();
+    for (int d = 2; d >= 1; d--)
+        for (int i = 0; i < 13; i++) ps.push_back(hp(NOW - d * DAY + i * 10 * MIN, i % 2 ? "a" : "b", i < 4 ? 0.96f : i >= 9 ? 0.92f : 0.95f));
+    h = habits(ps, 0, NOW);
+    CHECK(!h.empty() && h[0].title == "You get worse late in long sessions" && has(h[0].text, "from 96.0% in the first third to 92.0%"));
+
+    // three short sessions that each start cold
+    ps.clear();
+    for (int d = 3; d >= 1; d--)
+        for (int i = 0; i < 6; i++) ps.push_back(hp(NOW - d * DAY + i * 5 * MIN, i % 2 ? "a" : "b", i < 2 ? 0.90f : 0.95f));
+    h = habits(ps, 0, NOW);
+    CHECK(h.size() == 1 && h[0].title == "Warm up before your hard maps");
+
+    ps.clear();  // a normal week: nothing to say
+    for (int i = 0; i < 20; i++) ps.push_back(hp(NOW - 5 * DAY + i * 4 * 60 * MIN, i % 3 ? "a" : "b", 0.95f));
+    CHECK(habits(ps, 0, NOW).empty());
+}
+
 void coachTests() {
     test_explain();
     test_explain_held();
     test_stops_group();
     test_finger_lock();
     test_gallop();
+    test_habits();
     test_features();
     test_suggest();
     test_pp();

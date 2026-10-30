@@ -10,6 +10,7 @@ struct Day {
     int fcs; double accSum;
 };
 struct Weakness { Skill s; double pp; std::string metric, fix; };
+struct Habit { std::string title, text; };
 struct Report {
     float radar[NSKILL]; float actual[NSKILL], expected[NSKILL];  // miss rates (timing: UR)
     bool needHistory;
@@ -18,9 +19,12 @@ struct Report {
     int trend[3];  // UR, jump miss rate, stream miss rate: +1 improving, 0 flat, -1 regressing
     std::vector<Day> days;
     size_t recentFrom;  // index of the first recent play
+    std::vector<Habit> habits;  // practice habits worth changing (see habits())
 };
 
 int ymd(int64_t unixMs);  // local date as yyyymmdd
+// plays in time order; from = first recent play.
+std::vector<Habit> habits(const std::vector<PlayStats>& plays, size_t from, int64_t nowMs);
 double ppEstimate(float stars, float od, int nobj, float acc, int misses);
 Report coach(const std::vector<PlayStats>& plays, std::vector<Day>& history, int64_t nowMs);
 // Plain-English account of a mistake: what happened, what to do instead, and what to practise.

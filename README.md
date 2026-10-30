@@ -31,7 +31,7 @@ Space plays and pauses, the arrow keys jump between mistakes, and Enter continue
 
 | Tab | In plain words |
 |---|---|
-| **Overview** | the coach's verdict ("Ready to push to 4.5★" or "Still grinding 4.0★"), your skills compared with your usual, and the three things costing you the most pp, each with what to do |
+| **Overview** | the coach's verdict ("Ready to push to 4.5★" or "Still grinding 4.0★"), your skills compared with your usual, the three things costing you the most pp, each with what to do, and practice habits worth changing: retrying one map over and over, playing mostly maps that are too hard, getting worse late in long sessions, or starting cold without a warm-up |
 | **Timing** | how steady your timing is (UR, lower is steadier), whether you click early or late, and how often you're within 15/30/50 ms of perfect |
 | **Aim** | how often you miss close notes, short moves, jumps and big jumps (in circle widths), and whether you stop short of the circle or go past it |
 | **Speed** | finger lock (still holding the last key when you press the next), switching fingers, speeding up in long streams, your comfortable stream BPM |
