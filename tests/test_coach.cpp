@@ -115,6 +115,16 @@ static void test_timing_rate() {
     CHECK(nm > 0 && dt > 0 && dt < nm);
 }
 
+static void test_trend_windows() {
+    // a day exactly 7 days back belongs to last week, so this week (fewer jump misses) reads as improving
+    std::vector<PlayStats> ps;
+    for (int i = 0; i < 3; i++) ps.push_back(mk(NOW - 7 * DAY + i * 1000, 4, 100, 20, false, 0.95f));
+    for (int i = 0; i < 3; i++) ps.push_back(mk(NOW - DAY + i * 1000, 4, 100, 5, false, 0.95f));
+    std::vector<Day> h;
+    Report r = coach(ps, h, NOW);
+    CHECK(r.trend[1] == 1);
+}
+
 static void test_verdict() {
     std::vector<PlayStats> ps;
     for (int i = 0; i < 6; i++) ps.push_back(mk(NOW - 10 * DAY + i * 1000, 4.0f, 50, 2, i < 3, 0.97f));
@@ -165,5 +175,6 @@ void coachTests() {
     test_history_roundtrip();
     test_history_rebin();
     test_timing_rate();
+    test_trend_windows();
     test_verdict();
 }

@@ -225,7 +225,7 @@ void tabReading(const Recent& rc) {
     ImGui::Text("Maps at AR below 8:  %.2f%% of notes missed (%d notes)", pct(rc.arMiss[0], rc.arObj[0]), rc.arObj[0]);
     ImGui::Text("Maps at AR 8+:       %.2f%% of notes missed (%d notes)", pct(rc.arMiss[1], rc.arObj[1]), rc.arObj[1]);
     ImGui::Spacing();
-    ImGui::TextColored(kDim, "AR includes mods (HR x1.4, EZ x0.5). A big gap between the two rows usually means reading, not aim.");
+    ImGui::TextColored(kDim, "AR includes mods (HR, EZ, DT, HT). A big gap between the two rows usually means reading, not aim.");
 }
 
 void missList(const PlayStats& p) {
@@ -266,11 +266,12 @@ void missList(const PlayStats& p) {
 void tabPlays(App& a) {
     auto& ps = a.res.plays;
     static std::vector<int> order;
-    static size_t orderFor = SIZE_MAX;
-    if (orderFor != ps.size()) {
+    static int orderFor = -1;
+    bool fresh = orderFor != a.gen;
+    if (fresh) {
         order.resize(ps.size());
         for (size_t i = 0; i < ps.size(); i++) order[i] = (int)(ps.size() - 1 - i);
-        orderFor = ps.size();
+        orderFor = a.gen;
     }
     float h = a.selPlay >= 0 ? ImGui::GetContentRegionAvail().y * 0.45f : 0;
     if (ImGui::BeginTable("plays", 7, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY | ImGuiTableFlags_Sortable, {0, h})) {
@@ -279,7 +280,7 @@ void tabPlays(App& a) {
         ImGui::TableSetupColumn("Map", ImGuiTableColumnFlags_WidthStretch);
         for (auto c : {"Stars", "Mods", "Acc", "Misses", "UR"}) ImGui::TableSetupColumn(c, ImGuiTableColumnFlags_WidthFixed, 70);
         ImGui::TableHeadersRow();
-        if (auto* s = ImGui::TableGetSortSpecs(); s && s->SpecsDirty && s->SpecsCount) {
+        if (auto* s = ImGui::TableGetSortSpecs(); s && (s->SpecsDirty || fresh) && s->SpecsCount) {  // re-apply the header's sort to a new scan
             int col = s->Specs[0].ColumnIndex;
             bool asc = s->Specs[0].SortDirection == ImGuiSortDirection_Ascending;
             auto key = [&](int i) -> double {
@@ -391,10 +392,8 @@ void drawApp(App& a) {
     ImGui::Begin("osu-coach", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus);
 
     static Recent rc;
-    static const PlayStats* builtFor = nullptr;
-    static size_t builtN = 0;
-    if (a.scanned && (builtFor != a.res.plays.data() || builtN != a.res.plays.size()))
-        rc = build(a.res.plays, a.rep.recentFrom), builtFor = a.res.plays.data(), builtN = a.res.plays.size();
+    static int builtFor = -1;
+    if (a.scanned && builtFor != a.gen) rc = build(a.res.plays, a.rep.recentFrom), builtFor = a.gen;
 
     if (a.osuDir.empty()) {
         ImGui::TextWrapped("osu! folder not found. Pick the folder that contains osu!.db (for example C:\\Users\\you\\AppData\\Local\\osu!).");

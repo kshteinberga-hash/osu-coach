@@ -5,10 +5,12 @@
 #include <cstdlib>
 
 static std::string_view trim(std::string_view s) {
-    while (!s.empty() && (s.front() == ' ' || s.front() == '\t' || s.front() == '\r' || s.front() == '\xEF' || s.front() == '\xBB' || s.front() == '\xBF')) s.remove_prefix(1);
+    while (!s.empty() && (s.front() == ' ' || s.front() == '\t' || s.front() == '\r')) s.remove_prefix(1);
     while (!s.empty() && (s.back() == ' ' || s.back() == '\t' || s.back() == '\r')) s.remove_suffix(1);
     return s;
 }
+
+static std::string_view skipBom(std::string_view s) { return s.starts_with("\xEF\xBB\xBF") ? s.substr(3) : s; }
 
 static double num(std::string_view s) { return std::strtod(std::string(trim(s)).c_str(), nullptr); }
 
@@ -45,6 +47,7 @@ bool parseOsu(std::string_view text, Beatmap& b) {
     std::string_view sec, artist, title, version;
     double sm = 1.4;
     bool haveAr = false;
+    text = skipBom(text);
     while (!text.empty()) {
         size_t p = text.find('\n');
         std::string_view line = trim(text.substr(0, p));
@@ -220,7 +223,7 @@ bool readOsuDb(const std::wstring& dir, std::vector<DbMap>& out) {
     int n = R.get<int>();
     if (ver < 20191106 || n < 0) return false;
     out.clear();
-    out.reserve(n);
+    out.reserve(std::min<size_t>(n, s.size() / 64));  // every entry takes well over 64 bytes; n may be garbage
     for (int i = 0; i < n && R.ok; i++) {
         DbMap m{};
         std::string artist = R.str(); R.str();
@@ -281,7 +284,7 @@ static std::wstring regDir(const wchar_t* key) {
 std::wstring findOsuDir() {
     std::string ini;
     if (readFile(exeDir() + L"\\osu-coach.ini", ini)) {
-        std::wstring d = widen(trim(ini));
+        std::wstring d = widen(trim(skipBom(ini)));
         if (hasDb(d)) return d;
     }
     for (auto k : {L"osustable.File.osz\\shell\\open\\command", L"osu\\shell\\open\\command"})

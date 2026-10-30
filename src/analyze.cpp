@@ -15,7 +15,7 @@ std::vector<std::pair<size_t, size_t>> findStreams(const std::vector<float>& sp,
     for (size_t i = 0; i + 1 < sp.size();) {
         float g0 = gap[i + 1];
         size_t j = i + 1;
-        if (g0 <= maxGap)
+        if (g0 > 0 && g0 <= maxGap)
             while (j < sp.size() && sp[j] <= 3 && std::fabs(gap[j] - g0) <= 0.15f * g0) j++;
         if (j - i >= 4) out.push_back({i, j}), i = j;
         else i++;
@@ -39,7 +39,8 @@ PlayStats analyze(const Replay& r, const Beatmap& b, float stars) {
     if (r.mods & 16) od = std::min(10.f, od * 1.4f), cs = std::min(10.f, cs * 1.3f), ar = std::min(10.f, ar * 1.4f);
     if (r.mods & 2) od *= 0.5f, cs *= 0.5f, ar *= 0.5f;
     float rate = r.mods & (64 | 512) ? 1.5f : r.mods & 256 ? 0.75f : 1.f;
-    s.rate = rate, s.od = od, s.ar = ar, s.bpm *= rate;
+    float preempt = (ar < 5 ? 1800 - 120 * ar : 1200 - 150 * (ar - 5)) / rate;  // approach time in real ms
+    s.rate = rate, s.od = od, s.ar = preempt > 1200 ? (1800 - preempt) / 120 : 5 + (1200 - preempt) / 150, s.bpm *= rate;
     float w300 = 80 - 6 * od, w100 = 140 - 8 * od, w50 = 200 - 10 * od, rad = 54.4f - 4.48f * cs;
     bool flip = r.mods & 16;
 

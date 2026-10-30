@@ -34,6 +34,13 @@ static void test_osu_old_timing() {
     CHECK(b.objs.size() == 1 && b.objs[0].end == 2500);
 }
 
+static void test_osu_bom_fullwidth() {
+    // the BOM goes, a value starting with a full-width letter (EF BC A5) stays intact
+    Beatmap b;
+    CHECK(parseOsu("\xEF\xBB\xBFosu file format v14\n[Metadata]\nTitle:S\nArtist:A\nVersion:\xEF\xBC\xA5xtra\n", b));
+    CHECK(b.title == "A - S [\xEF\xBC\xA5xtra]");
+}
+
 static void test_osu_degenerate() {
     Beatmap b;
     CHECK(parseOsu("[General]\nMode: 0\n[Difficulty]\nOverallDifficulty:7\n[HitObjects]\n10,10,500,1,0\n", b));
@@ -133,6 +140,11 @@ static void test_deleted_map() {
     ScanResult r = scan(dir.wstring());
     CHECK(r.dbOk && r.db.empty());
     CHECK(r.deleted == 1 && r.plays.empty());
+    db.clear();  // a garbage beatmap count must fail the read, not throw bad_alloc
+    put<int>(db, 20260924); put<int>(db, 0); put<uint8_t>(db, 1); put<int64_t>(db, 0); uleb(db, "x"); put<int>(db, 0x7fffffff);
+    { std::ofstream f(dir / L"osu!.db", std::ios::binary); f << db; }
+    std::vector<DbMap> maps;
+    CHECK(!readOsuDb(dir.wstring(), maps));
     std::filesystem::remove_all(dir);
 }
 
@@ -140,6 +152,7 @@ int main() {
     test_deleted_map();
     test_osu_basic();
     test_osu_old_timing();
+    test_osu_bom_fullwidth();
     test_osu_degenerate();
     test_osu_ar_default();
     test_osr_header();

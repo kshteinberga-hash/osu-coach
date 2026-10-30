@@ -229,9 +229,11 @@ Report coach(const std::vector<PlayStats>& plays, std::vector<Day>& hist, int64_
     for (int i = 0; i < r.nTop; i++) r.top[i] = ws[i];
 
     // 5. trends: this week vs last week
-    int d7 = ymd(now - 7 * DAY_MS), d14 = ymd(now - 14 * DAY_MS);
+    int d7 = ymd(now - 6 * DAY_MS), d14 = ymd(now - 13 * DAY_MS);  // today + 6 days, and the 7 days before
     Agg thisW, lastW;
-    for (auto& d : hist) (d.date >= d7 ? thisW : d.date >= d14 ? lastW : pooled).add(d);
+    for (auto& d : hist)
+        if (d.date >= d7) thisW.add(d);
+        else if (d.date >= d14) lastW.add(d);
     auto trend = [](double now_, double before, bool ok) { return !ok ? 0 : now_ < before * 0.95 ? 1 : now_ > before * 1.05 ? -1 : 0; };
     r.trend[0] = trend(thisW.ur(), lastW.ur(), thisW.en >= 50 && lastW.en >= 50);
     r.trend[1] = trend(thisW.rate(JUMPS), lastW.rate(JUMPS), thisW.obj[JUMPS] >= 20 && lastW.obj[JUMPS] >= 20);
@@ -269,7 +271,7 @@ MapFeat features(const Beatmap& b) {
         gap.push_back(p ? (float)(o.t - p->t) : 1e9f);
         if (p) {
             n++, jumps += sp.back() >= 4;
-            if (gap.size() > 2 && gap[gap.size() - 2] < 1e8f && std::fabs(gap.back() / gap[gap.size() - 2] - 1) > 0.25f) rhythm++;
+            if (gap.size() > 2 && gap[gap.size() - 2] > 0 && gap[gap.size() - 2] < 1e8f && std::fabs(gap.back() / gap[gap.size() - 2] - 1) > 0.25f) rhythm++;
         }
         sliders += o.kind == 1;
         p = &o;
@@ -350,7 +352,8 @@ void saveHistory(const std::wstring& path, const std::vector<Day>& days) {
         fputs(i + 1 < days.size() ? ",\n" : "\n", f);
     }
     fputs("]\n", f);
-    fclose(f);
+    bool bad = ferror(f) != 0;
+    if (fclose(f) != 0 || bad) { _wremove(tmp.c_str()); return; }  // e.g. disk full: keep the old history
     MoveFileExW(tmp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING);
 }
 

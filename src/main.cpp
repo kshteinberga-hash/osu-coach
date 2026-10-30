@@ -26,20 +26,21 @@ static float comfortableStreamBpm(const std::vector<PlayStats>& plays, size_t fr
     return b[b.size() / 2];
 }
 
-static Skill trainFor(const App& a, const Report& r) { return a.trainSkill >= 0 ? (Skill)a.trainSkill : r.nTop ? r.top[0].s : JUMPS; }
+static Skill trainFor(int skill, const Report& r) { return skill >= 0 ? (Skill)skill : r.nTop ? r.top[0].s : JUMPS; }
 
 void App::startScan() {
     if (busy || osuDir.empty()) return;
     busy = true, done = 0, total = 0;
-    std::thread([this] {
-        pRes = scan(osuDir, &done, &total);
+    // the UI can change these while the worker runs: copy them
+    std::thread([this, dir = osuDir, lo = lo, hi = hi, skill = trainSkill] {
+        pRes = scan(dir, &done, &total);
         std::wstring hp = exeDir() + L"\\history.json";
         std::vector<Day> hist;
         loadHistory(hp, hist);
         pRep = coach(pRes.plays, hist, nowMs());
         saveHistory(hp, pRep.days);
         pBpm = comfortableStreamBpm(pRes.plays, pRep.recentFrom);
-        pSugg = suggest(pRes.db, pRes.plays, trainFor(*this, pRep), lo, hi, pBpm, nowMs());
+        pSugg = suggest(pRes.db, pRes.plays, trainFor(skill, pRep), lo, hi, pBpm, nowMs());
         scanReady = true;
         PostMessageW((HWND)hwnd, WM_APP, 0, 0);
     }).detach();
@@ -48,8 +49,8 @@ void App::startScan() {
 void App::startSuggest() {
     if (busy || !scanned) return;
     busy = true;
-    std::thread([this] {
-        pSugg = suggest(res.db, res.plays, trainFor(*this, rep), lo, hi, streamBpm, nowMs());
+    std::thread([this, lo = lo, hi = hi, skill = trainSkill] {
+        pSugg = suggest(res.db, res.plays, trainFor(skill, rep), lo, hi, streamBpm, nowMs());
         suggReady = true;
         PostMessageW((HWND)hwnd, WM_APP, 0, 0);
     }).detach();
@@ -58,7 +59,7 @@ void App::startSuggest() {
 void App::poll() {
     if (scanReady.exchange(false)) {
         res = std::move(pRes), rep = std::move(pRep), sugg = std::move(pSugg), streamBpm = pBpm;
-        scanned = true, selPlay = -1, busy = false;
+        scanned = true, selPlay = -1, gen++, busy = false;
     }
     if (suggReady.exchange(false)) sugg = std::move(pSugg), busy = false;
 }

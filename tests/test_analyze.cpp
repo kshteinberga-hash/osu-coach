@@ -64,6 +64,16 @@ static void test_dt_rate() {
     CHECK(s.sMiss == 0);
     NEAR(s.err.mean(), 10, 0.01);
     NEAR(s.rate, 1.5, 0);
+    NEAR(s.ar, 5 + (1200 - 400) / 150.0, 0.01);  // AR 9 = 600 ms preempt, 400 ms on DT
+    s = analyze(rep({}, 256), map3(), 4);
+    NEAR(s.ar, 5 + (1200 - 800) / 150.0, 0.01);  // HT: 800 ms
+}
+
+static void test_zero_gap() {
+    // objects stacked on one timestamp (2B maps) are not a stream with an infinite BPM
+    std::vector<float> sp(6, 0.f), gap(6, 0.f);
+    gap[0] = 1e9f;
+    CHECK(findStreams(sp, gap, 200).empty());
 }
 
 static void test_quit() {
@@ -116,4 +126,5 @@ void analyzeTests() {
     test_quit();
     test_degenerate();
     test_stream();
+    test_zero_gap();
 }
