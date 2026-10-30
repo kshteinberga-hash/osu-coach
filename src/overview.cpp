@@ -124,6 +124,12 @@ void priorities(const Canvas& c,const Report& report) {
         c.text(786,y+27,490,25,19,muted,sentence);
         if(c.target(("priority-"+std::to_string(i)).c_str(),730,y,560,52,wk.metric+"\n\n"+wk.fix)) gForceTab=tabs[wk.s];
     }
+    if(!report.habits.empty()) {  // how you practise, not what: one line under the skills, the advice on hover
+        const auto& h=report.habits[0];
+        c.draw->AddRectFilled(c.point(735,902),c.point(1300,904),ink);
+        c.text(745,908,540,24,18,ink,"Habit: "+h.title,BAR);
+        c.target("habit",730,902,570,32,h.text);
+    }
 }
 }
 

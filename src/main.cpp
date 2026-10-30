@@ -29,11 +29,23 @@ static float comfortableStreamBpm(const std::vector<PlayStats>& plays, size_t fr
 
 static Skill trainFor(int skill, const Report& r) { return skill >= 0 ? (Skill)skill : r.nTop ? r.top[0].s : JUMPS; }
 
+MapQuery App::query(int m) const {
+    const MapSearch& s = maps[m];
+    MapQuery q;
+    q.mode = (MapMode)m, q.weak = trainFor(m == PRACTICE ? trainSkill : -1, rep), q.lo = s.lo, q.hi = s.hi, q.streamBpm = streamBpm;
+    q.maxLenS = m == EASY && !s.shortOnly ? 0 : 120;
+    q.status = s.status, q.noAnime = s.noAnime, q.text = m == EASY ? s.text : "";
+    return q;
+}
+
 void App::startScan() {
     if (busy || osuDir.empty()) return;
     busy = true, done = 0, total = 0;
     // the UI can change these while the worker runs: copy them
-    std::thread([this, dir = osuDir, lo = lo, hi = hi, skill = trainSkill] {
+    std::vector<MapQuery> qs;
+    std::vector<bool> keep;  // the user's own star range
+    for (int m = 0; m < NMODE; m++) qs.push_back(query(m)), keep.push_back(maps[m].rangeSet);
+    std::thread([this, dir = osuDir, qs, keep, skill = trainSkill] {
         pRes = scan(dir, &done, &total, &quitting);
         if (quitting) { scanReady = true; return; }  // closing: a partial scan must not be merged into history.json
         std::wstring hp = exeDir() + L"\\history.json";
@@ -42,17 +54,23 @@ void App::startScan() {
         pRep = coach(pRes.plays, hist, nowMs());
         saveHistory(hp, pRep.days);
         pBpm = comfortableStreamBpm(pRes.plays, pRep.recentFrom);
-        pSugg = suggest(pRes.db, pRes.plays, trainFor(skill, pRep), lo, hi, pBpm, nowMs(), &quitting);
+        for (int m = 0; m < NMODE; m++) {
+            MapQuery q = qs[m];
+            q.weak = trainFor(m == PRACTICE ? skill : -1, pRep), q.streamBpm = pBpm;
+            if (!keep[m]) defaultRange((MapMode)m, pRep.tier, q.lo, q.hi);
+            pLo[m] = q.lo, pHi[m] = q.hi;
+            pSugg[m] = suggest(pRes.db, pRes.plays, q, nowMs(), &quitting);
+        }
         scanReady = true;
         PostMessageW((HWND)hwnd, WM_APP, 0, 0);
     }).detach();
 }
 
-void App::startSuggest() {
+void App::startSuggest(int m) {
     if (busy || !scanned) return;
-    busy = true;
-    std::thread([this, lo = lo, hi = hi, skill = trainSkill] {
-        pSugg = suggest(res.db, res.plays, trainFor(skill, rep), lo, hi, streamBpm, nowMs(), &quitting);
+    busy = true, pMode = m;
+    std::thread([this, q = query(m), m] {
+        pSugg[m] = suggest(res.db, res.plays, q, nowMs(), &quitting);
         suggReady = true;
         PostMessageW((HWND)hwnd, WM_APP, 0, 0);
     }).detach();
@@ -60,10 +78,14 @@ void App::startSuggest() {
 
 void App::poll() {
     if (scanReady.exchange(false)) {
-        res = std::move(pRes), rep = std::move(pRep), sugg = std::move(pSugg), streamBpm = pBpm;
+        res = std::move(pRes), rep = std::move(pRep), streamBpm = pBpm;
+        for (int m = 0; m < NMODE; m++) {
+            maps[m].res = std::move(pSugg[m]), maps[m].shown = 5;
+            if (!maps[m].rangeSet) maps[m].lo = pLo[m], maps[m].hi = pHi[m];
+        }
         scanned = true, selPlay = -1, gen++, busy = false;
     }
-    if (suggReady.exchange(false)) sugg = std::move(pSugg), busy = false;
+    if (suggReady.exchange(false)) maps[pMode].res = std::move(pSugg[pMode]), maps[pMode].shown = 5, busy = false;
     if (objsReady.exchange(false)) selObjs = std::move(pObjs), selObjsFor = pObjsFor, selObjsGen = pObjsGen, objsBusy = false;
 }
 

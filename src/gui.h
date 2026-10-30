@@ -6,12 +6,21 @@
 #include "scan.h"
 #include "viewer.h"
 
+// One section of the Maps tab: its filters and its results.
+struct MapSearch {
+    float lo = 0, hi = 0; bool rangeSet = false;  // rangeSet: the user moved the stars, so a new scan keeps them
+    int status = 0; bool noAnime = true, shortOnly = true;  // shortOnly: Search only (Practice and Warm-up are always 2 min or less)
+    char text[128] = "";
+    std::vector<Suggestion> res; size_t shown = 5;
+};
 struct App {
+    App() { maps[EASY].status = 1, maps[EASY].shortOnly = false; }
     std::wstring osuDir;
     ScanResult res;
     Report rep;
-    std::vector<Suggestion> sugg;
-    float lo = 3.5f, hi = 4.5f, streamBpm = 0;
+    MapSearch maps[NMODE];
+    int mapMode = PRACTICE;
+    float streamBpm = 0;
     int trainSkill = -1, selPlay = -1;
     bool scanned = false;
     int gen = 0;  // bumped each time a scan lands: GUI caches key on it
@@ -20,8 +29,9 @@ struct App {
     std::atomic<int> done = 0, total = 0;
     ScanResult pRes;
     Report pRep;
-    std::vector<Suggestion> pSugg;
-    float pBpm = 0;
+    std::vector<Suggestion> pSugg[NMODE];
+    float pBpm = 0, pLo[NMODE], pHi[NMODE];
+    int pMode = 0;  // the section startSuggest() is filling
     void* hwnd = nullptr;
     std::atomic<bool> quitting = false;  // set on exit: scan and suggest stop early
     // per-note results of the selected play, read on a worker: it fills p* and sets objsReady, poll() moves them in
@@ -31,7 +41,8 @@ struct App {
     std::atomic<bool> objsReady = false;
     const std::vector<ObjRes>* selectedObjs();  // nullptr while the selected play is still being read
     void startScan();
-    void startSuggest();
+    MapQuery query(int mode) const;  // the section's filters, for a search on a worker
+    void startSuggest(int mode);
     void pickFolder();
     void poll();
     bool viewing = false;             // the replay viewer covers the window

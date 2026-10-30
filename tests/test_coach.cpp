@@ -158,14 +158,100 @@ static void test_suggest() {
     const char* md5[] = {"m-a", "m-b", "m-c"};
     float stars[] = {4.0f, 4.2f, 5.0f}, jump[] = {0.2f, 0.8f, 0.9f};
     for (int i = 0; i < 3; i++) {
-        db[i].md5 = md5[i], db[i].stars = {{0, stars[i]}}, db[i].title = md5[i];
+        db[i].md5 = md5[i], db[i].stars = {{0, stars[i]}}, db[i].title = md5[i], db[i].sid = i + 1, db[i].totalMs = 90000;
         cacheFeatures(md5[i], MapFeat{jump[i], 0, 0, 0, 9, 8, 180, 0});
     }
-    auto s = suggest(db, {}, JUMPS, 3.5f, 4.5f, 0, NOW);
+    MapQuery q;
+    q.weak = JUMPS, q.maxLenS = 120;
+    auto s = suggest(db, {}, q, NOW);
     CHECK(s.size() == 2);
     if (s.size() == 2) CHECK(s[0].map == &db[1] && s[1].map == &db[0] && !s[0].why.empty());
     db.push_back(db[1]);  // the same map imported into a second folder
-    CHECK(suggest(db, {}, JUMPS, 3.5f, 4.5f, 0, NOW).size() == 2);
+    CHECK(suggest(db, {}, q, NOW).size() == 2);
+    db.pop_back();
+
+    db[1].totalMs = 150000;  // 2:30 is too long for practice
+    s = suggest(db, {}, q, NOW);
+    CHECK(s.size() == 1 && s[0].map == &db[0]);
+    q.maxLenS = 0;
+    CHECK(suggest(db, {}, q, NOW).size() == 2);
+
+    db[1].tags = "tv size opening";  // anime is hidden unless asked for
+    CHECK(suggest(db, {}, q, NOW).size() == 1);
+    q.noAnime = false;
+    CHECK(suggest(db, {}, q, NOW).size() == 2);
+
+    db[0].status = 2, db[1].status = 7;  // graveyard, loved
+    q.status = 1;
+    s = suggest(db, {}, q, NOW);
+    CHECK(s.size() == 1 && s[0].map == &db[1]);
+    q.status = 2;
+    CHECK(suggest(db, {}, q, NOW).empty());
+    q.status = 0;
+
+    db[0].creator = "SomeMapper";
+    q.text = "somemap";
+    s = suggest(db, {}, q, NOW);
+    CHECK(s.size() == 1 && s[0].map == &db[0]);
+    q.text = "";
+
+    db[0].sid = db[1].sid;  // two difficulties of one mapset: only the better one
+    s = suggest(db, {}, q, NOW);
+    CHECK(s.size() == 1 && s[0].map == &db[1]);
+}
+
+static void test_warmup_easy() {
+    std::vector<DbMap> db(4);
+    // calm, fast streams, long streams, jumpy
+    MapFeat f[] = {{0.1f, 0.1f, 0.05f, 0.3f, 8, 7, 160, 6}, {0.1f, 0.4f, 0.05f, 0.2f, 8, 7, 230, 12},
+                   {0.1f, 0.4f, 0.05f, 0.2f, 8, 7, 150, 60}, {0.7f, 0, 0.05f, 0.2f, 8, 7, 160, 0}};
+    for (int i = 0; i < 4; i++) {
+        db[i].md5 = "w-" + std::to_string(i), db[i].stars = {{0, 2.5f}}, db[i].title = db[i].md5, db[i].sid = 100 + i, db[i].totalMs = 100000;
+        cacheFeatures(db[i].md5, f[i]);
+    }
+    MapQuery q;
+    q.mode = WARMUP, q.lo = 2, q.hi = 3, q.streamBpm = 200, q.maxLenS = 120;
+    auto s = suggest(db, {}, q, NOW);
+    CHECK(s.size() == 1 && s[0].map == &db[0]);  // nothing faster than you hold, no long streams, no jump maps
+
+    q.mode = EASY, q.weak = JUMPS;
+    s = suggest(db, {}, q, NOW);
+    CHECK(s.size() == 4 && s.back().map == &db[3]);  // the jump map comes last for someone weak at jumps
+    q.weak = STREAMS;
+    s = suggest(db, {}, q, NOW);
+    CHECK(s.size() == 4 && s[0].map == &db[3]);  // and first for someone weak at streams
+}
+
+static void test_anime() {
+    DbMap m{};
+    m.title = "Artist - Song [Hard]";
+    CHECK(!isAnime(m));
+    m.source = "Shingeki no Kyojin";
+    CHECK(isAnime(m));
+    m.source = "Touhou Project";
+    CHECK(!isAnime(m));
+    m.source = "", m.title = "Artist - Song (TV Size) [Hard]";
+    CHECK(isAnime(m));
+    m.title = "Artist - Never Ending Story [Hard]";
+    CHECK(!isAnime(m));
+    m.tags = "anime op";
+    CHECK(isAnime(m));
+    m.tags = "ed sheeran pop";  // "ed" isn't an anime word
+    CHECK(!isAnime(m));
+}
+
+static void test_default_range() {
+    float lo, hi;
+    defaultRange(PRACTICE, 4, lo, hi);
+    CHECK(lo == 4 && std::fabs(hi - 4.6f) < 1e-4);
+    defaultRange(WARMUP, 4, lo, hi);
+    CHECK(lo == 2.5f && hi == 3.5f);
+    defaultRange(EASY, 4, lo, hi);
+    CHECK(lo == 3 && std::fabs(hi - 3.8f) < 1e-4);
+    defaultRange(WARMUP, 1.5f, lo, hi);  // never below 1 star, never empty
+    CHECK(lo == 1 && hi == 1.5f);
+    defaultRange(WARMUP, 0, lo, hi);  // no plays yet
+    CHECK(lo == 2 && hi == 3);
 }
 
 static void test_dt_accuracy_pp() {
@@ -279,14 +365,55 @@ static void test_gallop() {
     CHECK(sum.diag == D_GALLOP && has(sum.title, "galloping (2 of 3)") && sum.practice == e.practice);
 }
 
+static PlayStats hp(int64_t when, const char* md5, float acc, float stars = 4) {
+    PlayStats p{};
+    p.when = when, p.md5 = md5, p.title = md5, p.acc = acc, p.stars = stars;
+    return p;
+}
+
+static void test_habits() {
+    const int64_t MIN = 60000;
+    std::vector<PlayStats> ps;
+    for (int i = 0; i < 12; i++) ps.push_back(hp(NOW - DAY + i * 3 * MIN, i < 7 ? "same" : i % 2 ? "a" : "b", 0.95f));
+    auto h = habits(ps, 0, NOW);
+    CHECK(h.size() == 1 && h[0].title == "Too many retries of one map" && has(h[0].text, "same 7 times in a row"));
+
+    ps.clear();
+    for (int i = 0; i < 12; i++) ps.push_back(hp(NOW - DAY + i * 3 * MIN, i % 2 ? "a" : "b", i < 8 ? 0.80f : 0.95f));
+    h = habits(ps, 0, NOW);
+    CHECK(h.size() == 1 && h[0].title == "Most of your maps are too hard right now" && has(h[0].text, "8 of your last 12"));
+
+    // two 2-hour sessions, 13 plays each 10 minutes apart: 96% at the start, 92% at the end, same stars
+    ps.clear();
+    for (int d = 2; d >= 1; d--)
+        for (int i = 0; i < 13; i++) ps.push_back(hp(NOW - d * DAY + i * 10 * MIN, i % 2 ? "a" : "b", i < 4 ? 0.96f : i >= 9 ? 0.92f : 0.95f));
+    h = habits(ps, 0, NOW);
+    CHECK(!h.empty() && h[0].title == "You get worse late in long sessions" && has(h[0].text, "from 96.0% in the first third to 92.0%"));
+
+    // three short sessions that each start cold
+    ps.clear();
+    for (int d = 3; d >= 1; d--)
+        for (int i = 0; i < 6; i++) ps.push_back(hp(NOW - d * DAY + i * 5 * MIN, i % 2 ? "a" : "b", i < 2 ? 0.90f : 0.95f));
+    h = habits(ps, 0, NOW);
+    CHECK(h.size() == 1 && h[0].title == "Warm up before your hard maps");
+
+    ps.clear();  // a normal week: nothing to say
+    for (int i = 0; i < 20; i++) ps.push_back(hp(NOW - 5 * DAY + i * 4 * 60 * MIN, i % 3 ? "a" : "b", 0.95f));
+    CHECK(habits(ps, 0, NOW).empty());
+}
+
 void coachTests() {
     test_explain();
     test_explain_held();
     test_stops_group();
     test_finger_lock();
     test_gallop();
+    test_habits();
     test_features();
     test_suggest();
+    test_warmup_easy();
+    test_anime();
+    test_default_range();
     test_dt_accuracy_pp();
     test_pp();
     test_radar_neutral();
