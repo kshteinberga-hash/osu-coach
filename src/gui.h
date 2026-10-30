@@ -1,8 +1,10 @@
 #pragma once
 #include <atomic>
+#include <memory>
 #include <mutex>
 #include "coach.h"
 #include "scan.h"
+#include "viewer.h"
 
 struct App {
     std::wstring osuDir;
@@ -28,7 +30,12 @@ struct App {
     void startSuggest();
     void pickFolder();
     void poll();
+    bool viewing = false;             // the replay viewer covers the window
+    std::unique_ptr<Viewer> viewer;
+    void openViewer();                // opens the selected play
 };
+void drawViewer(App& a);
+bool viewerWantsFrames(const App& a);  // true while the viewer is playing
 void drawApp(App& a);
 void setupStyle(float dpi);  // fonts, colours and the 8 px spacing grid
 extern int gForceTab;  // >= 0 selects that tab on the next frame (used by --screenshot)
@@ -49,7 +56,8 @@ void section(const char* id, float w, float h, bool autoH = false);  // flat pan
 void endSection();
 void gap();   // 16 px between sections
 void rule();  // full-width 1 px divider
-bool button2(const char* label);  // secondary button (panel fill, rule border); ImGui::Button is the pink primary
+bool button1(const char* label, ImVec2 size = {0, 0});  // primary: pink fill, ink text
+bool button2(const char* label);  // secondary: panel fill, rule border
 bool table(const char* id, int cols, float h = 0, int extra = 0);
 void headerRow();
 void cell(ImU32 c, const std::string& s);

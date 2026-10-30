@@ -244,7 +244,9 @@ Explain explainMiss(const ObjRes& o, float beatMs) {
                 "Keep a steady rhythm: listen to the beat instead of watching the circles."};
     switch (o.cause) {
         case AIM: {
-            std::string t = fmt("You clicked on time (%.0f ms %s), but your cursor was %.1f circle widths from the centre. ", std::fabs(o.err), side, o.dist / 2);
+            float out = (o.dist - 1) / 2;  // circle widths beyond the circle's edge (dist is in radii)
+            std::string t = fmt("You clicked on time (%.0f ms %s), but your cursor was ", std::fabs(o.err), side) +
+                            (out < 0.25f ? std::string("just outside the edge of the circle. ") : fmt("%.1f circle widths outside the circle. ", out));
             t += o.along < 0 ? "You stopped short of it." : o.along > 0 ? "You went past it." : "You were off to the side.";
             if (o.spacing > 4) t += fmt(" This was a jump of %.1f circle widths", o.spacing / 2) + where + ".";
             else if (!where.empty()) t += " This happened" + where + ".";

@@ -177,7 +177,8 @@ static ObjRes miss(uint8_t cause, float err = 0, float dist = 0, float spacing =
 static void test_explain() {
     Explain e = explainMiss(miss(AIM, 20, 2.4f, 9, -1), 500);
     CHECK(e.title == "Missed: aim");
-    CHECK(has(e.text, "stopped short") && has(e.text, "1.2 circle widths") && has(e.text, "jump of 4.5 circle widths"));
+    CHECK(has(e.text, "stopped short") && has(e.text, "0.7 circle widths outside the circle") && has(e.text, "jump of 4.5 circle widths"));
+    CHECK(has(explainMiss(miss(AIM, 0, 1.1f, 9, -1), 500).text, "just outside the edge"));
     CHECK(has(e.tip, "all the way to the centre"));
     CHECK(has(explainMiss(miss(AIM, 0, 2, 9, 1), 500).text, "went past"));
     CHECK(has(explainMiss(miss(AIM, 0, 2, 1, 0), 500).text, "off to the side"));

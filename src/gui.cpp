@@ -445,6 +445,10 @@ void tabPlays(App& a) {
     txt(BODY, cMuted, sf("%s  \xC2\xB7  %s  \xC2\xB7  %.2f%% accuracy  \xC2\xB7  %d misses  \xC2\xB7  steadiness %.0f  \xC2\xB7  best combo %d",
                          dateStr(p.when).c_str(), modStr(p.mods).c_str(), 100 * p.acc, p.gmiss, p.err.ur(), p.combo));
     ImGui::Dummy({0, S(8)});
+    if (button1("Watch replay with the coach")) a.openViewer();
+    ImGui::SameLine(0, S(16));
+    ImGui::AlignTextToFramePadding();
+    txt(BODY, cMuted, "Plays it back with the music and stops at every mistake to explain it.");
     float rest = ImGui::GetContentRegionAvail().y;
     missList(p, a.selectedObjs(), std::max(S(96), rest - S(96)));
     txt(LABEL, cMuted, "When your clicks landed in this play (white line = perfect)");
@@ -475,7 +479,7 @@ void tabMaps(App& a) {
     if (ImGui::Combo("##train", &cur, items, NSKILL + 1)) a.trainSkill = cur - 1;
     ImGui::SameLine(0, S(24));
     ImGui::BeginDisabled(a.busy);
-    if (ImGui::Button("Find maps")) a.startSuggest();
+    if (button1("Find maps")) a.startSuggest();
     ImGui::EndDisabled();
     if (a.busy) { ImGui::SameLine(0, S(16)); ImGui::AlignTextToFramePadding(); txt(BODY, cMuted, "searching..."); }
     endSection();
@@ -492,7 +496,7 @@ void tabMaps(App& a) {
         txt(TITLE, cCream, s.map->title);
         txt(BODY, cMuted, s.why, true);
         if (s.map->bid > 0) {
-            if (ImGui::Button("Open map page")) open(L"https://osu.ppy.sh/b/" + std::to_wstring(s.map->bid));
+            if (button1("Open map page")) open(L"https://osu.ppy.sh/b/" + std::to_wstring(s.map->bid));
             ImGui::SameLine(0, S(8));
         }
         if (button2("Show in folder")) open(L"explorer.exe", L"/select,\"" + s.map->path + L"\"");
@@ -576,6 +580,13 @@ void rule() {
     ImGui::GetWindowDrawList()->AddLine({p.x, p.y}, {p.x + ImGui::GetContentRegionAvail().x, p.y}, cRule);
     ImGui::Dummy({0, S(1)});
 }
+bool button1(const char* label, ImVec2 size) {
+    ImGui::PushStyleColor(ImGuiCol_Button, cPink), ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(255, 133, 189, 255)), ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(230, 80, 150, 255));
+    ImGui::PushStyleColor(ImGuiCol_Text, cInk);  // ink on pink: 6.8:1
+    bool r = ImGui::Button(label, size);
+    ImGui::PopStyleColor(4);
+    return r;
+}
 bool button2(const char* label) {
     ImGui::PushStyleColor(ImGuiCol_Button, cPanel), ImGui::PushStyleColor(ImGuiCol_ButtonHovered, cRule), ImGui::PushStyleColor(ImGuiCol_ButtonActive, cRule);
     ImGui::PushStyleColor(ImGuiCol_Text, cCream);
@@ -635,7 +646,7 @@ void setupStyle(float dpi) {
     st.WindowPadding = {32, 32}, st.FramePadding = {16, 13}, st.ItemSpacing = {8, 8}, st.ItemInnerSpacing = {8, 8};  // 18 px text + 2 x 13 = 44 px controls
     st.CellPadding = {8, 8}, st.ScrollbarSize = 16, st.GrabMinSize = 16;
     st.WindowRounding = st.ChildRounding = st.FrameRounding = st.GrabRounding = st.PopupRounding = st.ScrollbarRounding = st.TabRounding = 0;
-    st.WindowBorderSize = 0, st.ChildBorderSize = 1, st.FrameBorderSize = 0, st.PopupBorderSize = 1;
+    st.WindowBorderSize = 0, st.ChildBorderSize = 1, st.FrameBorderSize = 1, st.PopupBorderSize = 1;  // 1 px rule around every input
     st.SelectableTextAlign = {0, 0.5f};
     st.ScaleAllSizes(dpi);
     ImVec4* c = st.Colors;
@@ -645,7 +656,7 @@ void setupStyle(float dpi) {
     c[ImGuiCol_WindowBg] = v4(cInk), c[ImGuiCol_ChildBg] = v4(cPanel), c[ImGuiCol_PopupBg] = v4(cPanel);
     c[ImGuiCol_Border] = v4(cRule), c[ImGuiCol_BorderShadow] = v4(0), c[ImGuiCol_Separator] = v4(cRule);
     c[ImGuiCol_FrameBg] = v4(cInk), c[ImGuiCol_FrameBgHovered] = v4(cRule), c[ImGuiCol_FrameBgActive] = v4(cRule);
-    c[ImGuiCol_Button] = v4(cPink), c[ImGuiCol_ButtonHovered] = v4(IM_COL32(255, 133, 189, 255)), c[ImGuiCol_ButtonActive] = v4(IM_COL32(230, 80, 150, 255));
+    c[ImGuiCol_Button] = v4(cRule), c[ImGuiCol_ButtonHovered] = v4(IM_COL32(80, 72, 61, 255)), c[ImGuiCol_ButtonActive] = v4(IM_COL32(96, 87, 74, 255));  // neutral: combo arrows etc.
     c[ImGuiCol_Header] = v4(cRule), c[ImGuiCol_HeaderHovered] = v4(alpha(cRule, 160)), c[ImGuiCol_HeaderActive] = v4(cRule);
     c[ImGuiCol_TableHeaderBg] = v4(cPanel), c[ImGuiCol_TableBorderLight] = v4(cRule), c[ImGuiCol_TableBorderStrong] = v4(cRule);
     c[ImGuiCol_TableRowBg] = v4(cPanel), c[ImGuiCol_TableRowBgAlt] = v4(cInk);
@@ -660,6 +671,7 @@ void drawApp(App& a) {
     ImGui::SetNextWindowSize(vp->WorkSize);
     ImGui::Begin("osu-coach", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus);
 
+    if (a.viewing && a.viewer) { drawViewer(a); ImGui::End(); return; }
     static Recent rc;
     static int builtFor = -1;
     if (a.scanned && builtFor != a.gen) rc = build(a.res.plays, a.rep.recentFrom), builtFor = a.gen;
@@ -690,7 +702,7 @@ void drawApp(App& a) {
         txt(TITLE, cCream, "Where is osu! installed?");
         txt(BODY, cMuted, "Pick the folder that has osu!.db in it (for example C:\\Users\\you\\AppData\\Local\\osu!).", true);
         ImGui::Dummy({0, S(8)});
-        if (ImGui::Button("Choose osu! folder")) a.pickFolder();
+        if (button1("Choose osu! folder")) a.pickFolder();
         endSection();
         ImGui::End();
         return;
@@ -707,7 +719,9 @@ void drawApp(App& a) {
             bool on = tab == i;
             ImGui::PushStyleColor(ImGuiCol_Button, 0u), ImGui::PushStyleColor(ImGuiCol_ButtonHovered, cPanel), ImGui::PushStyleColor(ImGuiCol_ButtonActive, cRule);
             ImGui::PushStyleColor(ImGuiCol_Text, on ? cCream : cMuted);
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0);
             if (ImGui::Button(kTabs[i])) tab = i;
+            ImGui::PopStyleVar();
             if (on) {
                 ImVec2 mn = ImGui::GetItemRectMin(), mx = ImGui::GetItemRectMax();
                 ImGui::GetWindowDrawList()->AddRectFilled({mn.x, mx.y - S(4)}, mx, cPink);

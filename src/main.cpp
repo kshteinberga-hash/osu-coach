@@ -64,6 +64,14 @@ void App::poll() {
     if (suggReady.exchange(false)) sugg = std::move(pSugg), busy = false;
 }
 
+void App::openViewer() {
+    if (selPlay < 0 || selPlay >= (int)res.plays.size()) return;
+    viewer = std::make_unique<Viewer>();
+    viewer->open(osuDir, res.plays[selPlay], res.db);
+    viewing = true;
+}
+bool viewerWantsFrames(const App& a) { return a.viewing && a.viewer && a.viewer->clock.running; }
+
 const std::vector<ObjRes>& App::selectedObjs() {
     if (selObjsFor != selPlay || selObjsGen != gen) {
         selObjs = selPlay >= 0 && selPlay < (int)res.plays.size() ? reanalyze(osuDir, res.plays[selPlay], res.db) : std::vector<ObjRes>{};
@@ -157,8 +165,13 @@ static LRESULT WINAPI wndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
 }
 
 
+// GUI-subsystem exe: print to the parent console, unless stdout is already redirected to a file or pipe.
+static void consoleOut() {
+    if (GetFileType(GetStdHandle(STD_OUTPUT_HANDLE)) == FILE_TYPE_UNKNOWN && AttachConsole(ATTACH_PARENT_PROCESS)) freopen("CONOUT$", "w", stdout);
+}
+
 static int dumpMode(int argc, wchar_t** argv) {
-    if (AttachConsole(ATTACH_PARENT_PROCESS)) freopen("CONOUT$", "w", stdout);
+    consoleOut();
     std::wstring out, dir;
     for (int i = 1; i + 1 < argc; i++) {
         if (!wcscmp(argv[i], L"--dump")) out = argv[i + 1];
@@ -173,10 +186,43 @@ static int dumpMode(int argc, wchar_t** argv) {
     return 0;
 }
 
+// --synctest: plays the newest replay's song for 10 s at 1x and 5 s at 0.5x (muted) and checks that the music
+// advances at rate x speed against the wall clock, which is what keeps the replay in sync with it.
+static int syncTest() {
+    consoleOut();
+    std::wstring dir = findOsuDir();
+    ScanResult r = scan(dir);
+    for (int i = (int)r.plays.size() - 1; i >= 0; i--) {
+        Viewer v;
+        if (!v.open(dir, r.plays[i], r.db) || !v.audio.loaded()) continue;
+        v.volume = 0, v.applyVolume();
+        printf("%s (rate %.2f)\n", narrow(r.plays[i].file).c_str(), v.clock.rate);
+        bool ok = true;
+        for (float sp : {1.f, 0.5f}) {
+            v.setSpeed(sp), v.seek(20000), v.setPlaying(true);
+            LARGE_INTEGER f, a, b;
+            QueryPerformanceFrequency(&f), QueryPerformanceCounter(&a);
+            double t0 = v.audio.positionMs(), maxJump = 0, last = t0;
+            for (int k = 0; k < (sp == 1 ? 1000 : 500); k++) { Sleep(10); double p = v.audio.positionMs(); maxJump = std::max(maxJump, p - last); last = p; }
+            QueryPerformanceCounter(&b);
+            double wall = (b.QuadPart - a.QuadPart) * 1000.0 / f.QuadPart, expect = wall * v.clock.rate * sp, got = last - t0;
+            printf("speed %.2fx: music advanced %.0f ms, expected %.0f ms (error %+.0f ms, %.2f%%), largest step %.0f ms\n",
+                   sp, got, expect, got - expect, 100 * (got - expect) / expect, maxJump);
+            ok = ok && std::fabs(got - expect) <= 15 + 0.003 * expect;
+            v.setPlaying(false);
+        }
+        printf(ok ? "PASS\n" : "FAIL\n");
+        return ok ? 0 : 1;
+    }
+    printf("no replay with its music found\n");
+    return 1;
+}
+
 int wmain(int argc, wchar_t** argv) {
     std::wstring shotDir;
     for (int i = 1; i < argc; i++) {
         if (!wcscmp(argv[i], L"--dump")) return dumpMode(argc, argv);
+        if (!wcscmp(argv[i], L"--synctest")) return syncTest();
         if (!wcscmp(argv[i], L"--screenshot") && i + 1 < argc) shotDir = argv[i + 1];
     }
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
@@ -202,7 +248,7 @@ int wmain(int argc, wchar_t** argv) {
 
     int idle = 0, shot = 0;  // --screenshot: 4 frames per tab, saved on the last one
     for (bool run = true; run;) {
-        if (!app.busy && idle > 2 && shotDir.empty()) WaitMessage();  // sleep until input or a worker posts WM_APP
+        if (!app.busy && idle > 2 && shotDir.empty() && !viewerWantsFrames(app)) WaitMessage();  // sleep until input or a worker posts WM_APP
         MSG msg;
         bool any = false;
         while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
@@ -221,8 +267,14 @@ int wmain(int argc, wchar_t** argv) {
         }
         bool saveShot = false;
         if (!shotDir.empty() && app.scanned) {
-            int tab = shot / 4;
-            if (tab == 8) break;
+            int tab = shot / 4;  // tabs 0-7, then 8 = the viewer stopped at the first mistake of the newest play with one
+            if (tab == 9) break;
+            if (tab == 8 && shot % 4 == 0) {
+                for (int i = (int)app.res.plays.size() - 1; i >= 0; i--)
+                    if (app.res.plays[i].gmiss > 0) { app.selPlay = i; break; }
+                app.openViewer();
+                if (app.viewer) app.viewer->jumpTo(0);
+            }
             gForceTab = shot % 4 == 0 ? tab : -1;
             if (tab == 5 && shot % 4 == 0)
                 for (int i = (int)app.res.plays.size() - 1; i >= 0 && app.selPlay < 0; i--)
@@ -234,11 +286,11 @@ int wmain(int argc, wchar_t** argv) {
         ImGui::NewFrame();
         drawApp(app);
         ImGui::Render();
-        const float clear[4] = {14 / 255.f, 11 / 255.f, 22 / 255.f, 1};
+        const float clear[4] = {20 / 255.f, 18 / 255.f, 16 / 255.f, 1};
         gCtx->OMSetRenderTargets(1, &gRtv, nullptr);
         gCtx->ClearRenderTargetView(gRtv, clear);
         ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
-        if (saveShot) saveBackbuffer(shotDir + L"\\tab" + std::to_wstring(shot / 4 - 1) + L".bmp");
+        if (saveShot) saveBackbuffer(shotDir + (shot / 4 - 1 == 8 ? std::wstring(L"\\viewer.bmp") : L"\\tab" + std::to_wstring(shot / 4 - 1) + L".bmp"));
         gSwap->Present(1, 0);
     }
     while (app.busy) app.poll(), Sleep(20);  // only poll() clears busy: let a running scan finish and land
