@@ -216,6 +216,7 @@ int main() {
     test_dump_escapes();
     void analyzeTests(); analyzeTests();
     void curveTests(); curveTests();
+    void audioTests(); audioTests();
     void coachTests(); coachTests();
     std::printf("%d checks, %d failures\n", t_run, t_fail);
     return t_fail != 0;
