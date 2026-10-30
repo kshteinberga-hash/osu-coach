@@ -4,7 +4,7 @@ cd /d %~dp0
 where cl >nul 2>nul || call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat" >nul 2>nul
 if not exist build mkdir build
 set F=/nologo /O2 /MT /std:c++20 /EHsc /W3 /utf-8 /DNOMINMAX /DWIN32_LEAN_AND_MEAN /D_CRT_SECURE_NO_WARNINGS /Ithird_party\imgui /Ithird_party\lzma /Ithird_party\miniaudio /Ithird_party\stb /Ithird_party\fonts /Fobuild\
-set SRC=src\parse.cpp src\analyze.cpp src\coach.cpp src\scan.cpp src\audio.cpp build\lzma.obj build\audio_impl.obj
+set SRC=src\parse.cpp src\analyze.cpp src\coach.cpp src\scan.cpp src\audio.cpp src\playback.cpp build\lzma.obj build\audio_impl.obj
 if "%OUT%"=="" set OUT=osu-coach.exe
 set LIBS=user32.lib shell32.lib ole32.lib advapi32.lib winmm.lib
 if not exist build\lzma.obj cl /nologo /O2 /MT /c third_party\lzma\LzmaDec.c /Fobuild\lzma.obj >nul || exit /b 1
