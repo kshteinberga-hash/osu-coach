@@ -76,7 +76,7 @@ void Viewer::tick(double realMs) {
     if (!clock.running) return;
     double from = clock.t;
     bool song = audio.loaded() && audio.playing() && !audio.ended();
-    if (song) clock.t = audio.positionMs();
+    if (song) clock.follow(realMs, audio.positionMs());
     else clock.advance(realMs);
     if (coach && stops.cross(from, clock.t)) {
         int at = (int)stops.next - 1;
@@ -137,10 +137,13 @@ void drawPlayfield(Viewer& v, ImVec2 p, ImVec2 size) {
         if (m.kind == 1 && v.paths[i].size() > 1) {
             std::vector<ImVec2> pts;
             for (auto& q : v.paths[i]) pts.push_back(obj(q.first, q.second));
-            dl->AddPolyline(pts.data(), (int)pts.size(), fade(cWin, a), 0, 2 * r);
-            dl->AddPolyline(pts.data(), (int)pts.size(), fade(cScreenRule, a), 0, 2 * r - S(6));
-            dl->AddCircleFilled(pts.back(), r, fade(cWin, a));
-            dl->AddCircleFilled(pts.back(), r - S(3), fade(cScreenRule, a));
+            auto track = [&](float radius, ImU32 color) {
+                for (size_t j = 1; j < pts.size(); j++)
+                    dl->AddLine(pts[j - 1], pts[j], color, 2 * radius);
+                for (ImVec2 q : pts) dl->AddCircleFilled(q, radius, color, 16);
+            };
+            track(r, fade(cWin, a));
+            track(std::max(0.f, r - S(3)), fade(cScreenRule, a));
             if (m.slides > 1) {
                 ImVec2 ts = num->CalcTextSizeA(num->FontSize, FLT_MAX, 0, "\xE2\x86\xBA");
                 dl->AddText(num, num->FontSize, {pts.back().x - ts.x / 2, pts.back().y - ts.y / 2}, fade(cWin, a), "\xE2\x86\xBA");

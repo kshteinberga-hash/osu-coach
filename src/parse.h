@@ -38,6 +38,9 @@ struct Replay {
     std::vector<Frame> frames;
 };
 bool parseOsr(std::string_view bytes, Replay& r, bool withFrames);
+// Replay frame text "w|x|y|keys,...": skips the seed frame, the two (256, -500) placeholders stable writes first,
+// and any frame earlier than the previous one, so frame times never go backwards.
+bool parseFrames(std::string_view txt, std::vector<Frame>& out);
 bool readOsr(const std::wstring& path, Replay& r, bool withFrames);
 
 struct DbMap {

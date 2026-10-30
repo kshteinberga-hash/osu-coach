@@ -113,11 +113,25 @@ static void test_osr_frames() {
         put<int>(b, (int)z.size()); b += z;
         Replay r;
         CHECK(parseOsr(b, r, true));
-        CHECK(r.frames.size() == 402);
-        if (r.frames.size() != 402) continue;
-        CHECK(r.frames[3].keys == 5 && r.frames[4].keys == 0 && r.frames.back().t == 6399);
-        NEAR(r.frames[2].x, 100, 0);
+        CHECK(r.frames.size() == 400);  // the two (256, -500) placeholder frames are dropped
+        if (r.frames.size() != 400) continue;
+        CHECK(r.frames[1].keys == 5 && r.frames[2].keys == 0 && r.frames.back().t == 6399);
+        CHECK(std::is_sorted(r.frames.begin(), r.frames.end(), [](const Frame& a, const Frame& b) { return a.t < b.t; }));
+        NEAR(r.frames[0].x, 100, 0);
     }
+}
+
+static void test_frames_filter() {
+    // what stable writes: two placeholders at (256, -500), the second followed by a jump back in time,
+    // then real frames, one of which goes back 5 ms
+    std::vector<Frame> f;
+    CHECK(parseFrames("0|256|-500|0,7321|256|-500|0,-7306|10|10|0,16|20|20|5,-5|30|30|0,16|40|40|0,-12345|0|0|1234,", f));
+    CHECK(f.size() == 3);
+    if (f.size() != 3) return;
+    CHECK(f[0].t == 15 && f[1].t == 31 && f[2].t == 42);
+    NEAR(f[0].x, 10, 0); NEAR(f[2].x, 40, 0);
+    CHECK(f[1].keys == 5);
+    for (auto& fr : f) CHECK(fr.y != -500);
 }
 
 static void test_osr_long_lifebar() {
@@ -210,6 +224,7 @@ int main() {
     test_osu_ar_default();
     test_osr_header();
     test_osr_frames();
+    test_frames_filter();
     test_osr_long_lifebar();
     test_real_files();
     test_unicode_path();

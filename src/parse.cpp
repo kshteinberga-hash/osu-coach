@@ -286,20 +286,26 @@ static bool decodeFrames(const uint8_t* src, size_t n, std::vector<Frame>& out) 
         if (r != SZ_OK && r != SZ_ERROR_INPUT_EOF) return false;
         if (known || dl < cap || st == LZMA_STATUS_FINISHED_WITH_MARK) { txt.resize(dl); break; }
     }
+    return parseFrames(txt, out);
+}
+
+bool parseFrames(std::string_view s, std::vector<Frame>& out) {
     out.clear();
-    out.reserve(txt.size() / 16);
-    const char *q = txt.c_str(), *e = q + txt.size();
-    int t = 0;
-    while (*q) {
+    out.reserve(s.size() / 16);
+    const char *q = s.data(), *e = q + s.size();
+    int t = 0, n = 0;  // n counts frames read, the seed frame excluded
+    while (q < e) {
         const char* end;
-        long w = 0; end = std::from_chars(q, e, w).ptr; if (*end != '|') break; q = end + 1;
-        float x = 0; end = std::from_chars(q, e, x).ptr; if (*end != '|') break; q = end + 1;
-        float y = 0; end = std::from_chars(q, e, y).ptr; if (*end != '|') break; q = end + 1;
+        long w = 0; end = std::from_chars(q, e, w).ptr; if (end == e || *end != '|') break; q = end + 1;
+        float x = 0; end = std::from_chars(q, e, x).ptr; if (end == e || *end != '|') break; q = end + 1;
+        float y = 0; end = std::from_chars(q, e, y).ptr; if (end == e || *end != '|') break; q = end + 1;
         long k = 0; q = std::from_chars(q, e, k).ptr;
-        while (*q && *q != ',') q++;
-        if (*q == ',') q++;
+        while (q < e && *q != ',') q++;
+        if (q < e) q++;
         if (w == -12345) continue;
-        t += w;
+        t += w;  // skipped frames still move the clock, like osu!lazer's decoder
+        bool placeholder = n++ < 2 && x == 256 && y == -500;
+        if (placeholder || (!out.empty() && t < out.back().t)) continue;
         out.push_back({t, x, y, (int)k});
     }
     return true;
