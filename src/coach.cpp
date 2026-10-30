@@ -331,19 +331,19 @@ std::vector<Suggestion> suggest(const std::vector<DbMap>& db, const std::vector<
         std::string why;
         switch (weak) {
             case JUMPS: case BIGJUMPS:
-                sc = f.jump + (f.ar >= 9 ? 0.1f : 0), why = fmt("%.0f%% jumps, AR %.1f", 100 * f.jump, f.ar); break;
+                sc = f.jump + (f.ar >= 9 ? 0.1f : 0), why = fmt("%.0f%% of the notes are jumps; circles appear at AR %.1f", 100 * f.jump, f.ar); break;
             case STREAMS: case SPEED: {
                 float target = streamBpm > 0 ? streamBpm * 1.05f : f.bpm;
-                sc = f.stream * std::exp(-std::fabs(f.bpm - target) / 20), why = fmt("%.0f%% stream notes at %.0f BPM", 100 * f.stream, f.bpm);
+                sc = f.stream * std::exp(-std::fabs(f.bpm - target) / 20), why = fmt("%.0f%% of the notes are streams, at %.0f BPM", 100 * f.stream, f.bpm);
                 break;
             }
-            case READING: sc = f.rhythm + (f.ar >= 8.5f ? 0.3f : 0), why = fmt("%.0f%% rhythm changes, AR %.1f", 100 * f.rhythm, f.ar); break;
-            case STAMINA: sc = f.stream * std::min(1.f, f.longRun / 50.f), why = fmt("longest stream %d notes", f.longRun); break;
-            default: sc = std::min(1.f, f.od / 8) * (1 - f.slider), why = fmt("OD %.1f, %.0f%% circles", f.od, 100 * (1 - f.slider)); break;
+            case READING: sc = f.rhythm + (f.ar >= 8.5f ? 0.3f : 0), why = fmt("the rhythm changes on %.0f%% of the notes; circles appear at AR %.1f", 100 * f.rhythm, f.ar); break;
+            case STAMINA: sc = f.stream * std::min(1.f, f.longRun / 50.f), why = fmt("its longest stream is %d notes", f.longRun); break;
+            default: sc = std::min(1.f, f.od / 8) * (1 - f.slider), why = fmt("strict timing (OD %.1f), %.0f%% plain circles", f.od, 100 * (1 - f.slider)); break;
         }
         int n = recent.count(m->md5) ? recent[m->md5] : 0;
         sc *= n <= 3 ? 1.2f : n > 10 ? 0.5f : 1.f;
-        why += fmt(", %.2f\xE2\x98\x85, %d play%s in the last 30 days", stars, n, n == 1 ? "" : "s");
+        why += fmt(". %.2f\xE2\x98\x85, you played it %d time%s in the last 30 days.", stars, n, n == 1 ? "" : "s");
         if (sc > 0) out.push_back({m, stars, sc, why});
     }
     std::sort(out.begin(), out.end(), [](auto& a, auto& b) { return a.score > b.score; });
