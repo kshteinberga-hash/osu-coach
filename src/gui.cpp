@@ -536,39 +536,82 @@ void tabPlays(App& a) {
     endWindow();
 }
 
+// A caption and a control side by side, wrapped onto a new line when the row is full. Call endField() after the control.
+void field(const char* label, float controlW) {
+    flow(textSize(LABEL, label).x + S(8) + controlW, S(24));
+    ImGui::BeginGroup();
+    ImGui::AlignTextToFramePadding();
+    txt(LABEL, cMuted, label);
+    ImGui::SameLine(0, S(8));
+    ImGui::SetNextItemWidth(controlW);
+}
+void endField() { ImGui::EndGroup(); }
+bool checkbox(const char* label, bool* v) {
+    flow(ImGui::GetFrameHeight() + ImGui::GetStyle().ItemInnerSpacing.x + textSize(BODY, label).x, S(24));
+    return ImGui::Checkbox(label, v);
+}
+
 void tabMaps(App& a) {
-    window("ctl", "Practice maps from your Songs folder", cOrange, 0, 0, true);
-    txt(BODY, cMuted, "Five maps that train the skill you pick. Maps you haven't played much lately come first.", true);
+    static const char* const kSection[NMODE] = {"Practice", "Warm-up", "Search"};
+    static const char* const kIntro[NMODE] = {
+        "Short maps (2 minutes or less) that train the skill you pick. Maps you haven't played much lately come first.",
+        "Short, steady maps below your level to get your fingers going before a grinding session: no fast or long streams, no wild "
+        "jumps, no rhythm tricks. Any status counts, ranked, loved or graveyard.",
+        "Maps you can pass comfortably at your level, light on your weakest skill. Type a few letters to search by artist, title, "
+        "difficulty, mapper or tags, or leave it empty to see everything in the star range."};
+    static const char* const kResults[NMODE] = {"Practice maps", "Warm-up maps", "Maps you can pass"};
+    static const char* const kStatus[] = {"Any status", "Ranked and loved", "Ranked only"};
+    int m = a.mapMode;
+    MapSearch& s = a.maps[m];
+    window("ctl", "Maps from your Songs folder", cOrange, 0, 0, true);
+    for (int i = 0; i < NMODE; i++) {
+        if (i) ImGui::SameLine(0, S(8));
+        if (i == m ? button1(kSection[i]) : button2(kSection[i])) a.mapMode = i;
+    }
+    ImGui::Dummy({0, S(4)});
+    txt(BODY, cMuted, kIntro[m], true);
     ImGui::Dummy({0, S(8)});
-    ImGui::BeginGroup();
-    ImGui::AlignTextToFramePadding();
-    txt(LABEL, cMuted, "Stars");
-    ImGui::SameLine(0, S(8));
-    ImGui::SetNextItemWidth(S(280));
-    ImGui::DragFloatRange2("##stars", &a.lo, &a.hi, 0.05f, 1, 10, "%.2f\xE2\x98\x85");
-    ImGui::EndGroup();
-    flow(textSize(LABEL, "Train").x + S(8 + 216), S(24));
-    ImGui::BeginGroup();
-    ImGui::AlignTextToFramePadding();
-    txt(LABEL, cMuted, "Train");
-    ImGui::SameLine(0, S(8));
-    const char* items[NSKILL + 1] = {"My top weakness"};
-    for (int i = 0; i < NSKILL; i++) items[i + 1] = kSkillName[i];
-    int cur = a.trainSkill + 1;
-    ImGui::SetNextItemWidth(S(216));
-    if (ImGui::Combo("##train", &cur, items, NSKILL + 1)) a.trainSkill = cur - 1;
-    ImGui::EndGroup();
+    bool go = false;
+    ImGui::PushID(m);
+    if (m == EASY) {
+        field("Search", S(320));
+        go |= ImGui::InputTextWithHint("##text", "artist, title, mapper...", s.text, sizeof s.text, ImGuiInputTextFlags_EnterReturnsTrue);
+        endField();
+    }
+    field("Stars", S(240));
+    if (ImGui::DragFloatRange2("##stars", &s.lo, &s.hi, 0.05f, 1, 10, "%.2f\xE2\x98\x85")) s.rangeSet = true;
+    endField();
+    flow(buttonW("My level"), S(8));
+    if (button2("My level")) defaultRange((MapMode)m, a.rep.tier, s.lo, s.hi), s.rangeSet = false;
+    if (m == PRACTICE) {
+        const char* items[NSKILL + 1] = {"My top weakness"};
+        for (int i = 0; i < NSKILL; i++) items[i + 1] = kSkillName[i];
+        int cur = a.trainSkill + 1;
+        field("Train", S(216));
+        if (ImGui::Combo("##train", &cur, items, NSKILL + 1)) a.trainSkill = cur - 1;
+        endField();
+    }
+    field("Status", S(216));
+    ImGui::Combo("##status", &s.status, kStatus, 3);
+    endField();
+    checkbox("Hide anime songs", &s.noAnime);
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("osu! doesn't store a map's genre, so this goes by its source and tags.");
+    if (m == EASY) checkbox("2 minutes or shorter", &s.shortOnly);
     flow(buttonW("Find maps"), S(24));
     ImGui::BeginDisabled(a.busy);
-    if (button1("Find maps")) a.startSuggest();
+    go |= button1("Find maps");
     ImGui::EndDisabled();
+    if (go) a.startSuggest(m);
     if (a.busy) { ImGui::SameLine(0, S(16)); ImGui::AlignTextToFramePadding(); txt(BODY, cMuted, "searching..."); }
+    ImGui::PopID();
     endWindow();
     gap();
-    window("list", "Suggestions", cWell, 0, 0, true);
-    if (a.sugg.empty()) txt(BODY, cInk, "No maps in this star range. Widen the range or download a few maps.", true);
-    for (size_t i = 0; i < a.sugg.size(); i++) {
-        auto& s = a.sugg[i];
+    window("list", kResults[m], cWell, 0, 0, true, s.res.empty() ? "" : sf("%zu found", s.res.size()));
+    if (s.res.empty())
+        txt(BODY, cInk, m == EASY && s.text[0] ? "No maps match. Check the spelling, widen the star range or untick some filters."
+                                               : "No maps here. Widen the star range, untick some filters or download a few maps.", true);
+    for (size_t i = 0; i < s.res.size() && i < s.shown; i++) {
+        auto& r = s.res[i];
         ImGui::PushID((int)i);
         if (i) ImGui::Dummy({0, S(4)}), rule(), ImGui::Dummy({0, S(4)});
         ImGui::BeginGroup();
@@ -576,16 +619,21 @@ void tabMaps(App& a) {
         ImGui::EndGroup();
         ImGui::SameLine(0, S(16));
         ImGui::BeginGroup();
-        txt(TITLE, cInk, s.map->title);
-        txt(BODY, cMuted, s.why, true);
+        txt(TITLE, cInk, r.map->title);
+        if (!r.map->creator.empty()) txt(LABEL, cMuted, "mapped by " + r.map->creator);
+        txt(BODY, cMuted, r.why, true);
         ImGui::Dummy({0, S(4)});
-        if (s.map->bid > 0) {
-            if (button1("Open map page")) open(L"https://osu.ppy.sh/b/" + std::to_wstring(s.map->bid));
+        if (r.map->bid > 0) {
+            if (button1("Open map page")) open(L"https://osu.ppy.sh/b/" + std::to_wstring(r.map->bid));
             ImGui::SameLine(0, S(12));
         }
-        if (button2("Show in folder")) open(L"explorer.exe", L"/select,\"" + s.map->path + L"\"");
+        if (button2("Show in folder")) open(L"explorer.exe", L"/select,\"" + r.map->path + L"\"");
         ImGui::EndGroup();
         ImGui::PopID();
+    }
+    if (s.res.size() > s.shown) {
+        ImGui::Dummy({0, S(4)}), rule(), ImGui::Dummy({0, S(4)});
+        if (button2("Show 5 more")) s.shown += 5;
     }
     endWindow();
 }
@@ -633,7 +681,7 @@ void tabProgress(const Report& r, int gen) {
 // The menu bar across the top: logo, tabs (the current one inverted), and the folder buttons on the right.
 // When it all doesn't fit on one row the tabs move to a second row. Returns its height.
 float menuBar(App& a, int& tab, bool ready) {
-    static const char* kTabs[] = {"Overview", "Timing", "Aim", "Speed", "Reading", "Plays", "Practice maps", "Progress"};
+    static const char* kTabs[] = {"Overview", "Timing", "Aim", "Speed", "Reading", "Plays", "Maps", "Progress"};
     ImDrawList* dl = ImGui::GetWindowDrawList();
     ImVec2 wp = ImGui::GetWindowPos();
     float W = ImGui::GetWindowWidth(), pad = S(24), padY = S(10), ctl = S(44), tabPad = S(14);
@@ -939,7 +987,7 @@ void drawApp(App& a) {
     } else if (a.scanned) {
         if (!a.res.dbOk) {
             window("dberr", "Error", cWell, 0, 0, true);
-            txt(BODY, cBad, "osu!.db could not be read, so star ratings and practice maps are switched off.", true);
+            txt(BODY, cBad, "osu!.db could not be read, so star ratings and map suggestions are switched off.", true);
             endWindow();
             gap();
         }

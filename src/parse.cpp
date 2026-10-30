@@ -358,7 +358,8 @@ bool readOsuDb(const std::wstring& dir, std::vector<DbMap>& out) {
     for (int i = 0; i < n && R.ok; i++) {
         DbMap m{};
         std::string artist = R.str(); R.str();
-        std::string title = R.str(); R.str(); R.str();
+        std::string title = R.str(); R.str();
+        m.creator = R.str();
         std::string diff = R.str(); R.str();
         m.md5 = R.str();
         std::string file = R.str();
@@ -375,12 +376,13 @@ bool readOsuDb(const std::wstring& dir, std::vector<DbMap>& out) {
                 if (list == 0) m.stars.push_back({mods, v});
             }
         }
-        m.drainS = R.get<int>(); R.get<int>(); R.get<int>();
+        m.drainS = R.get<int>(); m.totalMs = R.get<int>(); R.get<int>();
         R.skip((size_t)R.get<int>() * 17);
         m.bid = R.get<int>(); m.sid = R.get<int>(); R.get<int>();
         R.skip(4); R.get<uint16_t>(); R.get<float>();
         uint8_t mode = R.get<uint8_t>();
-        R.str(); R.str(); R.get<uint16_t>(); R.str(); R.get<uint8_t>(); R.get<int64_t>(); R.get<uint8_t>();
+        m.source = R.str(); m.tags = R.str();
+        R.get<uint16_t>(); R.str(); R.get<uint8_t>(); R.get<int64_t>(); R.get<uint8_t>();
         std::string folder = R.str();
         R.get<int64_t>(); R.skip(5); R.get<int>(); R.get<uint8_t>();
         if (!R.ok) break;

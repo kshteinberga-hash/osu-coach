@@ -39,7 +39,7 @@ Space plays and pauses, the arrow keys jump between mistakes, and Enter continue
 | **Speed** | finger lock (still holding the last key when you press the next), switching fingers, speeding up in long streams, your comfortable stream BPM |
 | **Reading** | misses on the first note after a pause, and on circles that appear slowly vs quickly (AR) |
 | **Plays** | every play, and for each one every miss with its time and cause |
-| **Practice maps** | five maps from your Songs folder that train your weakest skill |
+| **Maps** | maps from your Songs folder, in three sections. **Practice**: short maps (2 minutes or less) that train your weakest skill. **Warm-up**: short, steady maps below your level to get your fingers going before a session, any status (ranked, loved, graveyard). **Search**: maps you can pass comfortably at your level, light on your weak skill, searchable by artist, title, mapper or tags. Star ranges start from your level; anime songs are hidden by default (guessed from the map's source and tags, since osu! doesn't store a genre) |
 | **Progress** | day-by-day timing, jump misses and stream misses, kept in `history.json` so it survives deleting maps |
 
 ## Use
@@ -73,7 +73,7 @@ build.bat test     builds and runs the unit tests
 
 - `src/parse.cpp` reads `.osr` (LZMA replay frames), `.osu` (sections, slider curves: straight, arc, bezier, catmull) and `osu!.db` (star ratings per mod).
 - `src/analyze.cpp` re-runs hit detection on the replay: hit windows `80−6·OD / 140−8·OD / 200−10·OD`, radius `54.4−4.48·CS`, with HR/EZ/DT/HT applied. For every note it records the timing error, key, hold time, aim distance and why it was missed.
-- `src/coach.cpp` builds the skill comparison, the pp estimate, the weaknesses and plain-English explanations, the practice-map scores and the history.
+- `src/coach.cpp` builds the skill comparison, the pp estimate, the weaknesses and plain-English explanations, the map finder (practice, warm-up and search) and the history.
 - `src/viewer.cpp`, `src/playback.cpp` and `src/audio.cpp` run the replay viewer. The music position drives the replay clock, so the two can't drift apart.
 - `src/scan.cpp` analyses replays on all CPU cores, about 1 s for 450 plays. `src/main.cpp` and `src/gui.cpp` are the Dear ImGui / DirectX 11 window, which sleeps when idle.
 

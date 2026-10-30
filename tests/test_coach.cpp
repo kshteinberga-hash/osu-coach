@@ -158,14 +158,100 @@ static void test_suggest() {
     const char* md5[] = {"m-a", "m-b", "m-c"};
     float stars[] = {4.0f, 4.2f, 5.0f}, jump[] = {0.2f, 0.8f, 0.9f};
     for (int i = 0; i < 3; i++) {
-        db[i].md5 = md5[i], db[i].stars = {{0, stars[i]}}, db[i].title = md5[i];
+        db[i].md5 = md5[i], db[i].stars = {{0, stars[i]}}, db[i].title = md5[i], db[i].sid = i + 1, db[i].totalMs = 90000;
         cacheFeatures(md5[i], MapFeat{jump[i], 0, 0, 0, 9, 8, 180, 0});
     }
-    auto s = suggest(db, {}, JUMPS, 3.5f, 4.5f, 0, NOW);
+    MapQuery q;
+    q.weak = JUMPS, q.maxLenS = 120;
+    auto s = suggest(db, {}, q, NOW);
     CHECK(s.size() == 2);
     if (s.size() == 2) CHECK(s[0].map == &db[1] && s[1].map == &db[0] && !s[0].why.empty());
     db.push_back(db[1]);  // the same map imported into a second folder
-    CHECK(suggest(db, {}, JUMPS, 3.5f, 4.5f, 0, NOW).size() == 2);
+    CHECK(suggest(db, {}, q, NOW).size() == 2);
+    db.pop_back();
+
+    db[1].totalMs = 150000;  // 2:30 is too long for practice
+    s = suggest(db, {}, q, NOW);
+    CHECK(s.size() == 1 && s[0].map == &db[0]);
+    q.maxLenS = 0;
+    CHECK(suggest(db, {}, q, NOW).size() == 2);
+
+    db[1].tags = "tv size opening";  // anime is hidden unless asked for
+    CHECK(suggest(db, {}, q, NOW).size() == 1);
+    q.noAnime = false;
+    CHECK(suggest(db, {}, q, NOW).size() == 2);
+
+    db[0].status = 2, db[1].status = 7;  // graveyard, loved
+    q.status = 1;
+    s = suggest(db, {}, q, NOW);
+    CHECK(s.size() == 1 && s[0].map == &db[1]);
+    q.status = 2;
+    CHECK(suggest(db, {}, q, NOW).empty());
+    q.status = 0;
+
+    db[0].creator = "SomeMapper";
+    q.text = "somemap";
+    s = suggest(db, {}, q, NOW);
+    CHECK(s.size() == 1 && s[0].map == &db[0]);
+    q.text = "";
+
+    db[0].sid = db[1].sid;  // two difficulties of one mapset: only the better one
+    s = suggest(db, {}, q, NOW);
+    CHECK(s.size() == 1 && s[0].map == &db[1]);
+}
+
+static void test_warmup_easy() {
+    std::vector<DbMap> db(4);
+    // calm, fast streams, long streams, jumpy
+    MapFeat f[] = {{0.1f, 0.1f, 0.05f, 0.3f, 8, 7, 160, 6}, {0.1f, 0.4f, 0.05f, 0.2f, 8, 7, 230, 12},
+                   {0.1f, 0.4f, 0.05f, 0.2f, 8, 7, 150, 60}, {0.7f, 0, 0.05f, 0.2f, 8, 7, 160, 0}};
+    for (int i = 0; i < 4; i++) {
+        db[i].md5 = "w-" + std::to_string(i), db[i].stars = {{0, 2.5f}}, db[i].title = db[i].md5, db[i].sid = 100 + i, db[i].totalMs = 100000;
+        cacheFeatures(db[i].md5, f[i]);
+    }
+    MapQuery q;
+    q.mode = WARMUP, q.lo = 2, q.hi = 3, q.streamBpm = 200, q.maxLenS = 120;
+    auto s = suggest(db, {}, q, NOW);
+    CHECK(s.size() == 1 && s[0].map == &db[0]);  // nothing faster than you hold, no long streams, no jump maps
+
+    q.mode = EASY, q.weak = JUMPS;
+    s = suggest(db, {}, q, NOW);
+    CHECK(s.size() == 4 && s.back().map == &db[3]);  // the jump map comes last for someone weak at jumps
+    q.weak = STREAMS;
+    s = suggest(db, {}, q, NOW);
+    CHECK(s.size() == 4 && s[0].map == &db[3]);  // and first for someone weak at streams
+}
+
+static void test_anime() {
+    DbMap m{};
+    m.title = "Artist - Song [Hard]";
+    CHECK(!isAnime(m));
+    m.source = "Shingeki no Kyojin";
+    CHECK(isAnime(m));
+    m.source = "Touhou Project";
+    CHECK(!isAnime(m));
+    m.source = "", m.title = "Artist - Song (TV Size) [Hard]";
+    CHECK(isAnime(m));
+    m.title = "Artist - Never Ending Story [Hard]";
+    CHECK(!isAnime(m));
+    m.tags = "anime op";
+    CHECK(isAnime(m));
+    m.tags = "ed sheeran pop";  // "ed" isn't an anime word
+    CHECK(!isAnime(m));
+}
+
+static void test_default_range() {
+    float lo, hi;
+    defaultRange(PRACTICE, 4, lo, hi);
+    CHECK(lo == 4 && std::fabs(hi - 4.6f) < 1e-4);
+    defaultRange(WARMUP, 4, lo, hi);
+    CHECK(lo == 2.5f && hi == 3.5f);
+    defaultRange(EASY, 4, lo, hi);
+    CHECK(lo == 3 && std::fabs(hi - 3.8f) < 1e-4);
+    defaultRange(WARMUP, 1.5f, lo, hi);  // never below 1 star, never empty
+    CHECK(lo == 1 && hi == 1.5f);
+    defaultRange(WARMUP, 0, lo, hi);  // no plays yet
+    CHECK(lo == 2 && hi == 3);
 }
 
 static void test_dt_accuracy_pp() {
@@ -287,6 +373,9 @@ void coachTests() {
     test_gallop();
     test_features();
     test_suggest();
+    test_warmup_easy();
+    test_anime();
+    test_default_range();
     test_dt_accuracy_pp();
     test_pp();
     test_radar_neutral();

@@ -1,5 +1,6 @@
 #include "coach.h"
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdarg>
 #include <cstdio>
@@ -494,12 +495,68 @@ static std::mutex gFeatMu;
 static std::unordered_map<std::string, MapFeat> gFeat;
 void cacheFeatures(const std::string& md5, const MapFeat& f) { std::lock_guard g(gFeatMu); gFeat[md5] = f; }
 
-std::vector<Suggestion> suggest(const std::vector<DbMap>& db, const std::vector<PlayStats>& plays, Skill weak,
-                                float lo, float hi, float streamBpm, int64_t now, const std::atomic<bool>* cancel) {
+static std::string lower(std::string s) {
+    for (auto& c : s) c = (char)std::tolower((unsigned char)c);
+    return s;
+}
+// whole word (or phrase) w in s, both lower case; words end at anything that isn't a letter or digit
+static bool hasWord(const std::string& s, std::string_view w) {
+    auto alnum = [](char c) { return std::isalnum((unsigned char)c) != 0; };
+    for (size_t i = s.find(w); i != std::string::npos; i = s.find(w, i + 1))
+        if ((i == 0 || !alnum(s[i - 1])) && (i + w.size() >= s.size() || !alnum(s[i + w.size()]))) return true;
+    return false;
+}
+
+bool isAnime(const DbMap& m) {
+    static const char* const kTv[] = {"tv size", "tv ver", "tv version", "tv edit"};
+    static const char* const kAnime[] = {"anime", "anison", "opening", "ending", "op", "insert song", "character song",
+                                         "\xE3\x82\xA2\xE3\x83\x8B\xE3\x83\xA1"};  // アニメ
+    static const char* const kGame[] = {"game", "touhou", "\xE6\x9D\xB1\xE6\x96\xB9", "undertale", "deltarune", "osu!", "cytus", "arcaea",
+                                        "deemo", "djmax", "beatmania", "iidx", "sound voltex", "maimai", "chunithm", "muse dash",
+                                        "phigros", "pop'n music", "jubeat", "taiko no tatsujin", "geometry dash", "minecraft", "celeste",
+                                        "persona", "final fantasy", "genshin", "honkai", "blue archive", "project sekai", "bang dream",
+                                        "love live", "idolm@ster", "idolmaster", "vocaloid"};  // games and idol/vocaloid franchises, not anime
+    std::string src = lower(m.source), tags = lower(m.tags), title = lower(m.title);
+    for (auto w : kTv) if (hasWord(tags, w) || hasWord(title, w)) return true;
+    for (auto w : kAnime) if (hasWord(tags, w) || hasWord(src, w)) return true;
+    if (src.empty()) return false;
+    for (auto w : kGame) if (src.find(w) != std::string::npos || hasWord(tags, w)) return false;
+    return true;  // most other maps with a source are from an anime
+}
+
+const char* statusName(uint8_t s) {
+    switch (s) {
+        case 4: return "Ranked";
+        case 5: return "Approved";
+        case 6: return "Qualified";
+        case 7: return "Loved";
+        case 2: return "Graveyard";
+        case 1: return "Unsubmitted";
+        default: return "Unknown status";
+    }
+}
+static bool statusOk(uint8_t s, int f) { return f == 0 || (f == 1 ? s >= 4 && s <= 7 : s == 4 || s == 5); }
+int mapLenS(const DbMap& m) { return m.totalMs > 0 ? (m.totalMs + 500) / 1000 : m.drainS; }
+
+void defaultRange(MapMode mode, float tier, float& lo, float& hi) {
+    static const float kNoData[NMODE][2] = {{3.5f, 4.5f}, {2, 3}, {2.5f, 3.5f}};
+    static const float kOffset[NMODE][2] = {{0, 0.6f}, {-1.5f, -0.5f}, {-1, -0.2f}};  // around the tier you FC or grind
+    if (tier <= 0) { lo = kNoData[mode][0], hi = kNoData[mode][1]; return; }
+    lo = std::max(1.f, tier + kOffset[mode][0]), hi = std::max(lo + 0.5f, tier + kOffset[mode][1]);
+}
+
+std::vector<Suggestion> suggest(const std::vector<DbMap>& db, const std::vector<PlayStats>& plays, const MapQuery& q, int64_t now,
+                                const std::atomic<bool>* cancel, size_t max) {
     std::vector<const DbMap*> cand, todo;
     std::unordered_set<std::string_view> seen;  // a map imported twice is in osu!.db twice
-    for (auto& m : db)
-        if (float s = starsFor(m, 0); s >= lo && s <= hi && seen.insert(m.md5).second) cand.push_back(&m);
+    std::string needle = lower(q.text);
+    for (auto& m : db) {
+        float s = starsFor(m, 0);
+        if (s < q.lo || s > q.hi || (q.maxLenS > 0 && mapLenS(m) > q.maxLenS) || !statusOk(m.status, q.status)) continue;
+        if (q.noAnime && isAnime(m)) continue;
+        if (!needle.empty() && lower(m.title + " " + m.creator + " " + m.source + " " + m.tags).find(needle) == std::string::npos) continue;
+        if (seen.insert(m.md5).second) cand.push_back(&m);
+    }
     {
         std::lock_guard g(gFeatMu);
         for (auto m : cand) if (!gFeat.count(m->md5)) todo.push_back(m);
@@ -519,29 +576,68 @@ std::vector<Suggestion> suggest(const std::vector<DbMap>& db, const std::vector<
     std::vector<Suggestion> out;
     std::lock_guard g(gFeatMu);
     for (auto m : cand) {
-        const MapFeat& f = gFeat[m->md5];
-        float sc, stars = starsFor(*m, 0);
-        std::string why;
-        switch (weak) {
-            case JUMPS: case BIGJUMPS:
-                sc = f.jump + (f.ar >= 9 ? 0.1f : 0), why = fmt("%.0f%% of the notes are jumps; circles appear at AR %.1f", 100 * f.jump, f.ar); break;
-            case STREAMS: case SPEED: {
-                float target = streamBpm > 0 ? streamBpm * 1.05f : f.bpm;
-                sc = f.stream * std::exp(-std::fabs(f.bpm - target) / 20), why = fmt("%.0f%% of the notes are streams, at %.0f BPM", 100 * f.stream, f.bpm);
-                break;
-            }
-            case READING: sc = f.rhythm + (f.ar >= 8.5f ? 0.3f : 0), why = fmt("the rhythm changes on %.0f%% of the notes; circles appear at AR %.1f", 100 * f.rhythm, f.ar); break;
-            case STAMINA: sc = f.stream * std::min(1.f, f.longRun / 50.f), why = fmt("its longest stream is %d notes", f.longRun); break;
-            default: sc = std::min(1.f, f.od / 8) * (1 - f.slider), why = fmt("strict timing (OD %.1f), %.0f%% plain circles", f.od, 100 * (1 - f.slider)); break;
-        }
+        auto it = gFeat.find(m->md5);
+        if (it == gFeat.end() || it->second.bpm <= 0) continue;  // not read (cancelled) or the .osu is gone
+        const MapFeat& f = it->second;
+        float sc = 0, stars = starsFor(*m, 0);
         int n = recent.count(m->md5) ? recent[m->md5] : 0;
-        sc *= n <= 3 ? 1.2f : n > 10 ? 0.5f : 1.f;
-        why += fmt(". %.2f\xE2\x98\x85, you played it %d time%s in the last 30 days.", stars, n, n == 1 ? "" : "s");
+        bool fastStreams = q.streamBpm > 0 && f.stream > 0.05f && f.bpm > q.streamBpm;  // streams faster than you hold
+        std::string why;
+        if (q.mode == PRACTICE) {
+            switch (q.weak) {
+                case JUMPS: case BIGJUMPS:
+                    sc = f.jump + (f.ar >= 9 ? 0.1f : 0), why = fmt("%.0f%% of the notes are jumps; circles appear at AR %.1f", 100 * f.jump, f.ar); break;
+                case STREAMS: case SPEED: {
+                    float target = q.streamBpm > 0 ? q.streamBpm * 1.05f : f.bpm;
+                    sc = f.stream * std::exp(-std::fabs(f.bpm - target) / 20), why = fmt("%.0f%% of the notes are streams, at %.0f BPM", 100 * f.stream, f.bpm);
+                    break;
+                }
+                case READING: sc = f.rhythm + (f.ar >= 8.5f ? 0.3f : 0), why = fmt("the rhythm changes on %.0f%% of the notes; circles appear at AR %.1f", 100 * f.rhythm, f.ar); break;
+                case STAMINA: sc = f.stream * std::min(1.f, f.longRun / 50.f), why = fmt("its longest stream is %d notes", f.longRun); break;
+                default: sc = std::min(1.f, f.od / 8) * (1 - f.slider), why = fmt("strict timing (OD %.1f), %.0f%% plain circles", f.od, 100 * (1 - f.slider)); break;
+            }
+            sc *= n <= 3 ? 1.2f : n > 10 ? 0.5f : 1.f;  // fresh maps first
+        } else if (q.mode == WARMUP) {
+            // nothing crazy: no streams faster than you hold, no long streams, no huge share of jumps, no very high AR
+            if (fastStreams || (q.streamBpm > 0 && f.stream > 0.05f && f.bpm > 0.9f * q.streamBpm) || f.longRun > 24 || f.jump > 0.45f || f.ar > 9.5f) continue;
+            float steady = 1 - std::min(1.f, 2 * f.rhythm);
+            sc = steady * (0.4f + std::min(f.stream, 0.25f) + std::min(f.jump, 0.25f));  // a bit of tapping and a bit of moving
+            sc *= n > 0 ? 1.1f : 1.f;                                                  // a familiar map warms up fastest
+            why = fmt("steady rhythm (changes on %.0f%% of the notes), %.0f%% streams and %.0f%% jumps: easy to settle into",
+                      100 * f.rhythm, 100 * f.stream, 100 * f.jump);
+        } else {
+            sc = 1;
+            const char* light = nullptr;
+            switch (q.weak) {
+                case JUMPS: case BIGJUMPS: sc *= 1 - 0.8f * std::min(1.f, f.jump * 2), light = "jumps"; why = fmt("only %.0f%% jumps", 100 * f.jump); break;
+                case STREAMS: case SPEED: case STAMINA:
+                    sc *= 1 - 0.8f * std::min(1.f, f.stream * 3), light = "streams";
+                    why = f.longRun >= 4 ? fmt("only %.0f%% streams, the longest %d notes", 100 * f.stream, f.longRun) : std::string("no streams");
+                    break;
+                case READING: sc *= (1 - 0.8f * std::min(1.f, f.rhythm * 2)) * (f.ar > 9.3f ? 0.6f : 1), light = "rhythm changes";
+                    why = fmt("a steady rhythm (changes on %.0f%% of the notes) at AR %.1f", 100 * f.rhythm, f.ar); break;
+                default: sc *= 1 - 0.5f * std::clamp((f.od - 7) / 3, 0.f, 1.f), light = "strict timing"; why = fmt("forgiving timing (OD %.1f)", f.od); break;
+            }
+            if (fastStreams) sc *= 0.3f;
+            sc *= 1 - 0.4f * (stars - q.lo) / std::max(0.1f, q.hi - q.lo);  // lower in the range is easier
+            sc *= n == 0 ? 1.1f : n > 10 ? 0.7f : 1.f;                     // new maps first
+            why += fmt(", so it goes easy on %s, your weak spot", light);
+            if (fastStreams) why += fmt(" (but its streams at %.0f BPM are faster than you usually hold)", f.bpm);
+        }
+        int len = mapLenS(*m);
+        why += fmt(". %.2f\xE2\x98\x85, %d:%02d, %.0f BPM, AR %.1f, %s. You played it %d time%s in the last 30 days.", stars, len / 60, len % 60,
+                   f.bpm, f.ar, statusName(m->status), n, n == 1 ? "" : "s");
         if (sc > 0) out.push_back({m, stars, sc, why});
     }
     std::sort(out.begin(), out.end(), [](auto& a, auto& b) { return a.score > b.score; });
-    if (out.size() > 5) out.resize(5);
-    return out;
+    std::unordered_set<int> sets;  // one difficulty per mapset: the best one
+    std::vector<Suggestion> best;
+    for (auto& s : out) {
+        if (s.map->sid > 0 && !sets.insert(s.map->sid).second) continue;
+        best.push_back(std::move(s));
+        if (best.size() >= max) break;
+    }
+    return best;
 }
 
 static const char* kOut ="{\"d\":%d,\"b\":%d,\"p\":%d,\"o\":%d,\"m\":[%d,%d,%d,%d,%d,%d,%d],\"ob\":[%d,%d,%d,%d,%d,%d,%d],\"es\":%.17g,\"ess\":%.17g,\"en\":%.17g,\"fc\":%d,\"as\":%.17g}";

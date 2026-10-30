@@ -44,8 +44,9 @@ bool parseFrames(std::string_view txt, std::vector<Frame>& out);
 bool readOsr(const std::wstring& path, Replay& r, bool withFrames);
 
 struct DbMap {
-    std::string md5; std::wstring path; std::string title; int bid, sid; uint8_t status;
-    float ar, cs, hp, od; std::vector<std::pair<int, float>> stars; int drainS, nCircle, nSlider, nSpinner;
+    std::string md5; std::wstring path; std::string title; int bid, sid; uint8_t status;  // status: 2 graveyard/WIP/pending, 4 ranked, 5 approved, 6 qualified, 7 loved
+    float ar, cs, hp, od; std::vector<std::pair<int, float>> stars; int drainS, totalMs, nCircle, nSlider, nSpinner;
+    std::string creator, source, tags;
 };
 float starsFor(const DbMap& m, int mods);  // exact EZ/HR/DT/HT entry, else nomod, else -1
 bool readOsuDb(const std::wstring& osuDir, std::vector<DbMap>& out);
