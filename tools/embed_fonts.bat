@@ -9,7 +9,6 @@ set F=third_party\fonts
 (
 build\b2c.exe -u32 %F%\IBMPlexSans-Regular.ttf kFontPlexSans
 build\b2c.exe -u32 %F%\IBMPlexSans-SemiBold.ttf kFontPlexSansSemi
-build\b2c.exe -u32 %F%\IBMPlexMono-Regular.ttf kFontPlexMono
 build\b2c.exe -u32 %F%\BricolageGrotesque-Bold.ttf kFontBricolageBold
 ) > %F%\fonts.inl || exit /b 1
 echo wrote %F%\fonts.inl

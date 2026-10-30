@@ -76,7 +76,7 @@ Third-party code, all in `third_party/`:
 - [Dear ImGui](https://github.com/ocornut/imgui) (MIT)
 - the [LZMA SDK](https://www.7-zip.org/sdk.html) decoder (public domain)
 - [miniaudio](https://github.com/mackron/miniaudio) and [stb_vorbis](https://github.com/nothings/stb) (public domain / MIT)
-- the fonts [IBM Plex Sans / Mono](https://github.com/IBM/plex) and [Bricolage Grotesque](https://github.com/ateliertriay/bricolage) (SIL Open Font License)
+- the fonts [IBM Plex Sans](https://github.com/IBM/plex) and [Bricolage Grotesque](https://github.com/ateliertriay/bricolage) (SIL Open Font License)
 
 ## License
 

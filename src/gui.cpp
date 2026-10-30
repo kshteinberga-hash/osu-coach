@@ -87,7 +87,8 @@ void radar(const Report& r, float size) {
     ImFont *fl = font(LABEL), *fv = font(TITLE);
     for (int i = 0; i < NSKILL; i++) {
         float a = -3.14159265f / 2 + i * 2 * 3.14159265f / (float)NSKILL, ca = std::cos(a), sa = std::sin(a);
-        std::string val = sf("%.0f", r.radar[i]);
+        // colour plus an arrow, so better/worse than usual doesn't rely on colour alone
+        std::string val = sf("%s%.0f", r.radar[i] < 45 ? "\xE2\x86\x93" : r.radar[i] > 55 ? "\xE2\x86\x91" : "", r.radar[i]);
         ImVec2 ls = textSize(LABEL, kSkillName[i]), vs = textSize(TITLE, val.c_str());
         float bw = std::max(ls.x, vs.x), bh = ls.y + vs.y;
         // push the label block out until its nearest edge clears the ring
@@ -439,7 +440,7 @@ void missList(const PlayStats& p, const std::vector<ObjRes>& objs, float h, int6
                 auto& o = objs[miss[row]];
                 int mt = (int)(o.t * p.rate);
                 ImGui::TableNextRow();
-                cellMono(sf("%d:%02d.%03d", mt / 60000, mt / 1000 % 60, mt % 1000)), cell(cMuted, sf("#%d", miss[row] + 1));
+                cell(cInk, sf("%d:%02d.%03d", mt / 60000, mt / 1000 % 60, mt % 1000)), cell(cMuted, sf("#%d", miss[row] + 1));
                 cell(cInk, explainMiss(o, beat).title), cell(cMuted, whereStr(o, beat));
             }
         ImGui::EndTable();
@@ -846,7 +847,6 @@ void headerRow() {
     }
 }
 void cell(ImU32 c, const std::string& s) { ImGui::TableNextColumn(); txt(BODY, c, s); }
-void cellMono(const std::string& s) { ImGui::TableNextColumn(); txt(BODY, cInk, s); }
 
 void setupStyle(float dpi) {
     gS = dpi;
@@ -863,12 +863,11 @@ void setupStyle(float dpi) {
     static const ImWchar symbols[] = {0x2190, 0x2193, 0x21BA, 0x21BA, 0x2264, 0x2264, 0x2605, 0x2605, 0x2715, 0x2715, 0};  // ← ↑ → ↓ ↺ ≤ ★ ✕
     static const ImWchar cyr[] = {0x0400, 0x052F, 0};
     struct F { const unsigned int* data; unsigned int size; float px; bool needCyr; };
-    const F fonts[] = {  // order = BODY, LABEL, TITLE, HEAD, MONO, BAR
+    const F fonts[] = {  // order = BODY, LABEL, TITLE, HEAD, BAR
         {kFontPlexSans_compressed_data, kFontPlexSans_compressed_size, 18, false},
         {kFontPlexSansSemi_compressed_data, kFontPlexSansSemi_compressed_size, 15, false},
         {kFontBricolageBold_compressed_data, kFontBricolageBold_compressed_size, 26, true},
         {kFontBricolageBold_compressed_data, kFontBricolageBold_compressed_size, 48, true},
-        {kFontPlexMono_compressed_data, kFontPlexMono_compressed_size, 17, true},
         {kFontBricolageBold_compressed_data, kFontBricolageBold_compressed_size, 19, true},
     };
     ImFontConfig mc;
@@ -877,7 +876,7 @@ void setupStyle(float dpi) {
         ImFontConfig fc;
         fc.FontDataOwnedByAtlas = true;
         io.Fonts->AddFontFromMemoryCompressedTTF(f.data, (int)f.size, S(f.px), &fc, ranges.Data);
-        if (f.needCyr) io.Fonts->AddFontFromFileTTF(ui.c_str(), S(f.px), &mc, cyr);  // Bricolage and Plex Mono have no Cyrillic
+        if (f.needCyr) io.Fonts->AddFontFromFileTTF(ui.c_str(), S(f.px), &mc, cyr);  // Bricolage has no Cyrillic
         io.Fonts->AddFontFromFileTTF(sym.c_str(), S(f.px), &mc, symbols);
     }
 

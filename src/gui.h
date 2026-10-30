@@ -52,7 +52,7 @@ constexpr ImU32 cDesk = IM_COL32(126, 178, 212, 255), cWin = IM_COL32(247, 241, 
 constexpr ImU32 cScreen = IM_COL32(36, 32, 54, 255), cScreenRule = IM_COL32(78, 72, 102, 255), cScreenMuted = IM_COL32(172, 164, 188, 255),
                 cHotPink = IM_COL32(255, 128, 176, 255), cHotRed = IM_COL32(255, 96, 70, 255), cHotAmber = IM_COL32(255, 190, 70, 255),
                 cLime = IM_COL32(186, 232, 96, 255);
-enum { BODY, LABEL, TITLE, HEAD, MONO, BAR };  // Plex Sans 18, Plex Sans SemiBold 15, Bricolage Grotesque 26 / 48, Plex Mono 17, Bricolage 19
+enum { BODY, LABEL, TITLE, HEAD, BAR };  // Plex Sans 18, Plex Sans SemiBold 15, Bricolage Grotesque 26 / 48 / 19
 extern float gS;                          // DPI scale
 float S(float v);                         // px at 100% -> px on screen
 ImFont* font(int i);
@@ -72,4 +72,3 @@ void flow(float w, float gap);  // put the next item (w wide) after the last one
 bool table(const char* id, int cols, float h = 0, int extra = 0);
 void headerRow();
 void cell(ImU32 c, const std::string& s);
-void cellMono(const std::string& s);
