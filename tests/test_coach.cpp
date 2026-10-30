@@ -195,16 +195,80 @@ static void test_explain() {
     CHECK(has(explainMiss(s, 500).text, "in the middle of a stream"));
 }
 
-static void test_mistakes() {
-    std::vector<ObjRes> v(4);
-    v[0].judge = 300, v[1].judge = 0, v[2].judge = 50, v[3].judge = 0;
-    CHECK((mistakes(v, false) == std::vector<int>{1, 3}));
-    CHECK((mistakes(v, true) == std::vector<int>{1, 2, 3}));
+static void test_explain_held() {
+    ObjRes prev = miss(HIT), o = miss(TAP);
+    prev.judge = 300, prev.key = 1, prev.hold = 160, o.gap = 90;
+    Explain e = explainMiss(o, 500, &prev);
+    CHECK(e.diag == D_TAP && has(e.text, "pressed K2") && has(e.text, "160 ms") && has(e.tip, "Let go") && has(e.practice, "90 ms"));
+}
+
+// 3 slow notes (500 ms apart), then a 12-note stream 80 ms apart (187 BPM), then one slow note
+static std::vector<ObjRes> streamPlay() {
+    std::vector<ObjRes> v;
+    for (int i = 0; i < 16; i++) {
+        ObjRes o{};
+        bool st = i >= 3 && i < 15;
+        o.t = i < 3 ? i * 500 : i < 15 ? 1500 + (i - 3) * 80 : 1500 + 11 * 80 + 500;
+        o.gap = i == 0 ? 1e9f : (float)(o.t - v.back().t), o.judge = 300, o.inStream = st, o.spacing = 1;
+        v.push_back(o);
+    }
+    return v;
+}
+static Tap tap(float t, int key, float hold = 30) { return {t, t + hold, key}; }
+
+static void test_stops_group() {
+    auto v = streamPlay();
+    v[1].judge = 0, v[1].cause = AIM;
+    for (int i : {8, 9, 11, 13}) v[i].judge = 0, v[i].cause = NOPRESS;
+    v[10].judge = 50;
+    auto s = coachStops(v, 180, false);
+    CHECK(s.size() == 2);
+    if (s.size() == 2) {
+        CHECK(s[0].at == 1 && s[0].first == 1 && s[0].last == 1 && s[0].bad == 1);
+        CHECK(s[1].at == 8 && s[1].first == 3 && s[1].last == 14 && s[1].bad == 4);  // one stop for the whole stream
+    }
+    CHECK(coachStops(v, 180, true).back().bad == 5);
+}
+
+static void test_finger_lock() {
+    auto v = streamPlay();
+    std::vector<Tap> taps;
+    for (int i = 3; i < 8; i++) taps.push_back(tap((float)v[i].t, i % 2));  // alternates for 5 notes
+    taps.push_back(tap((float)v[8].t, 1, 250));                               // then K2 goes down and stays
+    taps.push_back(tap((float)v[12].t, 1));
+    for (int i = 8; i < 15; i++) if (i != 12) v[i].judge = 0, v[i].cause = NOPRESS;
+    auto s = coachStops(v, 180, false);
+    Explain e = explainStop(v, taps, s.back(), 180);
+    CHECK(e.diag == D_LOCK && e.title == "Finger lock in a stream");
+    CHECK(has(e.text, "12-note stream at 188 BPM") && has(e.text, "first 5 notes") && has(e.text, "pressed only 2 times for the last 7 notes"));
+    CHECK(has(e.text, "K2 stayed down for 250 ms"));
+    CHECK(has(e.practice, "12-note streams at about 170 BPM"));
+}
+
+static void test_gallop() {
+    auto v = streamPlay();
+    std::vector<Tap> taps;
+    for (int i = 3; i < 15; i++) {  // K1 comes 20 ms early: K1 -> K2 takes 100 ms, K2 -> K1 60 ms
+        int k = (i - 3) % 2;
+        float err = k ? 0.f : -20.f;
+        taps.push_back(tap(v[i].t + err, k, k ? 25.f : 60.f));
+        v[i].err = err, v[i].judge = k ? 300 : 100;
+    }
+    v[9].judge = 0, v[9].cause = OFFTIME;
+    Explain e = explainStop(v, taps, coachStops(v, 180, false).back(), 180);
+    CHECK(e.diag == D_GALLOP && e.title == "Galloping in a stream");
+    CHECK(has(e.text, "K1 to K2 took 100 ms") && has(e.text, "K2 to K1 took 60 ms") && has(e.text, "both should be 80 ms"));
+    CHECK(has(e.text, "hold K1 down for 60 ms") && has(e.tip, "Press lighter"));
+    Explain sum = summarize({e, explainMiss(miss(AIM, 0, 2, 9, -1), 500), e});
+    CHECK(sum.diag == D_GALLOP && has(sum.title, "galloping (2 of 3)") && sum.practice == e.practice);
 }
 
 void coachTests() {
     test_explain();
-    test_mistakes();
+    test_explain_held();
+    test_stops_group();
+    test_finger_lock();
+    test_gallop();
     test_features();
     test_suggest();
     test_pp();

@@ -43,6 +43,21 @@ void tallySkills(PlayStats& s) {
     s.skObj[TIMING] = (int)s.err.n;
 }
 
+std::vector<Tap> taps(const std::vector<Frame>& frames, float rate) {
+    std::vector<Tap> v;
+    int open[2] = {-1, -1}, prev = 0;
+    for (auto& f : frames) {
+        for (int k = 0; k < 2; k++) {
+            int mask = k ? 10 : 5;
+            bool now = f.keys & mask, was = prev & mask;
+            if (now && !was) open[k] = (int)v.size(), v.push_back({f.t / rate, -1, k});
+            else if (was && !now && open[k] >= 0) v[open[k]].up = f.t / rate, open[k] = -1;
+        }
+        prev = f.keys;
+    }
+    return v;
+}
+
 namespace {
 struct Press { int t; float x, y; uint8_t key; int rel; };
 }

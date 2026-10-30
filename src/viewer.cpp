@@ -1,7 +1,6 @@
 #include "viewer.h"
 #include <algorithm>
 #include <cmath>
-#include "coach.h"
 #include "gui.h"
 
 bool Viewer::open(const std::wstring& osuDir, const PlayStats& p, const std::vector<DbMap>& db) {
@@ -32,6 +31,7 @@ bool Viewer::open(const std::wstring& osuDir, const PlayStats& p, const std::vec
             if ((f.keys & (k ? 10 : 5)) && !(prev & (k ? 10 : 5))) presses.push_back({f.t, f.x, f.y, k});
         prev = f.keys;
     }
+    taps = ::taps(rep.frames, p.rate);
     std::wstring folder = m->path.substr(0, m->path.find_last_of(L'\\') + 1);
     if (map.audioFile.empty() || !audio.load(folder + widen(map.audioFile))) audioNote = "Music file not found, playing silently.";
     clock.rate = p.rate;
@@ -43,9 +43,15 @@ bool Viewer::open(const std::wstring& osuDir, const PlayStats& p, const std::vec
 }
 
 void Viewer::rebuildStops() {
-    miss = mistakes(objs, stop50);
+    int was = stoppedAt >= 0 && stoppedAt < (int)spots.size() ? spots[stoppedAt].at : -1;  // keep showing the same note's stop
+    spots = coachStops(objs, play.bpm, stop50);
+    stoppedAt = -1;
+    for (int k = 0; k < (int)spots.size(); k++)
+        if (was >= spots[k].first && was <= spots[k].last) stoppedAt = k;
+    notes.clear();
     stops.times.clear();
-    for (int i : miss) stops.times.push_back(mapT(i));
+    for (auto& s : spots) notes.push_back(explainStop(objs, taps, s, play.bpm)), stops.times.push_back(mapT(s.at));
+    summary = summarize(notes);
     stops.seek(clock.t);
 }
 
@@ -63,10 +69,10 @@ void Viewer::seek(double t) {
 }
 
 void Viewer::jumpTo(int k) {
-    if (k < 0 || k >= (int)miss.size()) return;
+    if (k < 0 || k >= (int)spots.size()) return;
     setPlaying(false);
-    seek(mapT(miss[k]));
-    stoppedAt = miss[k];
+    seek(mapT(spots[k].at));
+    stoppedAt = k;
 }
 
 void Viewer::setSpeed(float s) { clock.speed = s, audio.setSpeed(clock.rate * s); }
@@ -83,7 +89,7 @@ void Viewer::tick(double realMs) {
         setPlaying(false);
         clock.t = stops.times[at];
         audio.seekMs(clock.t);
-        stoppedAt = miss[at];
+        stoppedAt = at;
     }
     if (clock.t > endT + 2000) setPlaying(false);
 }
@@ -183,14 +189,22 @@ void drawPlayfield(Viewer& v, ImVec2 p, ImVec2 size) {
             dl->AddCircleFilled(c, S(6), fade(pr.key ? cLime : cWin, a));
             dl->AddCircle(c, S(6), fade(cScreen, a), 12, S(1.5f));
         }
-    // the coach's stop: red ring on the note, and for aim misses a line from your click to the centre
+    // the coach's stop: red ring on the note (thin rings on the run's other mistakes still on screen), and for aim
+    // misses a line from your click to the centre
     if (v.stoppedAt >= 0) {
-        auto& res = v.objs[v.stoppedAt];
-        auto& m = v.map.objs[v.objMap[v.stoppedAt]];
+        const Stop& sp = v.spots[v.stoppedAt];
+        for (int k = sp.first; k <= sp.last; k++) {
+            int mt = v.mapT(k);
+            if (k == sp.at || v.objs[k].judge == 300 || t < mt - v.preempt || t > mt + 150) continue;
+            auto& m = v.map.objs[v.objMap[k]];
+            dl->AddCircle(obj(m.x, m.y), r * 1.2f, cHotRed, 48, S(1.5f));
+        }
+        auto& res = v.objs[sp.at];
+        auto& m = v.map.objs[v.objMap[sp.at]];
         ImVec2 c = obj(m.x, m.y);
         dl->AddCircle(c, r * 1.3f, cHotRed, 48, S(3));
         if (res.cause == AIM || res.cause == OFFTIME) {
-            auto q = v.cursorAt(v.mapT(v.stoppedAt) + res.err * v.clock.rate);
+            auto q = v.cursorAt(v.mapT(sp.at) + res.err * v.clock.rate);
             ImVec2 a = cur(q.first, q.second);
             dl->AddLine(a, c, cHotRed, S(2));
             dl->AddCircleFilled(a, S(6), cHotRed);
@@ -264,8 +278,8 @@ void drawViewer(App& a) {
     // keyboard: Space play/pause, arrows previous/next mistake, Enter continue
     auto nextMistake = [&](int dir) {
         int best = -1;
-        for (int k = 0; k < (int)v.miss.size(); k++) {
-            int mt = v.mapT(v.miss[k]);
+        for (int k = 0; k < (int)v.spots.size(); k++) {
+            int mt = v.mapT(v.spots[k].at);
             if (dir > 0 && mt > v.clock.t + 1 && best < 0) best = k;
             if (dir < 0 && mt < v.clock.t - 1) best = k;
         }
@@ -324,27 +338,38 @@ void drawViewer(App& a) {
         ImGui::Dummy({0, S(4)});
         rule();
         ImGui::Dummy({0, S(4)});
-        float beat = v.play.bpm > 0 ? 60000 / v.play.bpm : 500;
         if (v.stoppedAt >= 0) {
-            Explain e = explainMiss(v.objs[v.stoppedAt], beat);
-            txt(LABEL, cMuted, clockStr(v.mapT(v.stoppedAt)));
-            txt(TITLE, v.objs[v.stoppedAt].judge ? cWarn : cBad, e.title, true);
+            const Explain& e = v.notes[v.stoppedAt];
+            const Stop& sp = v.spots[v.stoppedAt];
+            ImGui::BeginChild("stop", {0, 0}, ImGuiChildFlags_None, ImGuiWindowFlags_NoBackground);
+            txt(LABEL, cMuted, clockStr(v.mapT(sp.at)) + sf("   stop %d of %zu", v.stoppedAt + 1, v.spots.size()));
+            txt(TITLE, sp.first == sp.last && v.objs[sp.at].judge ? cWarn : cBad, e.title, true);
             txt(BODY, cInk, e.text, true);
             ImGui::Dummy({0, S(8)});
             txt(LABEL, cGood, "What to do");
             txt(BODY, cInk, e.tip, true);
             ImGui::Dummy({0, S(8)});
+            txt(LABEL, cGood, "Practise");
+            txt(BODY, cInk, e.practice, true);
+            ImGui::Dummy({0, S(8)});
             if (button1("Continue  (Enter)")) v.setPlaying(true);
+            ImGui::EndChild();
         } else {
-            txt(TITLE, cInk, v.miss.empty() ? "Clean play: nothing to stop at" : sf("%zu mistakes in this play", v.miss.size()), true);
-            txt(BODY, cMuted, v.miss.empty() ? "Press Play (or Space) to watch it." : "The coach stops at each one. Click one to jump there.", true);
+            txt(TITLE, cInk, v.spots.empty() ? "Clean play: nothing to stop at" : v.summary.title, true);
+            if (v.spots.empty()) txt(BODY, cMuted, "Press Play (or Space) to watch it.", true);
+            else {
+                txt(BODY, cMuted, v.summary.text + " A broken burst or stream is one stop. Click one to jump there.", true);
+                ImGui::Dummy({0, S(4)});
+                txt(LABEL, cGood, "Practise");
+                txt(BODY, cInk, v.summary.practice, true);
+                ImGui::Dummy({0, S(4)});
+            }
             ImGui::BeginChild("list", {0, 0}, ImGuiChildFlags_None, ImGuiWindowFlags_NoBackground);
-            ImGuiListClipper clip;  // only the visible rows are explained each frame
-            clip.Begin((int)v.miss.size(), S(44) + ImGui::GetStyle().ItemSpacing.y);
+            ImGuiListClipper clip;
+            clip.Begin((int)v.spots.size(), S(44) + ImGui::GetStyle().ItemSpacing.y);
             while (clip.Step())
                 for (int k = clip.DisplayStart; k < clip.DisplayEnd; k++) {
-                    int i = v.miss[k];
-                    std::string row = clockStr(v.mapT(i)) + "   " + explainMiss(v.objs[i], beat).title + "##m" + std::to_string(k);
+                    std::string row = clockStr(v.mapT(v.spots[k].at)) + "   " + v.notes[k].title + "##m" + std::to_string(k);
                     if (ImGui::Selectable(row.c_str(), false, 0, {0, S(44)})) v.jumpTo(k);
                     if (ImGui::IsItemHovered()) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
                 }

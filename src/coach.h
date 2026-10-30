@@ -23,10 +23,18 @@ struct Report {
 int ymd(int64_t unixMs);  // local date as yyyymmdd
 double ppEstimate(float stars, float od, int nobj, float acc, int misses);
 Report coach(const std::vector<PlayStats>& plays, std::vector<Day>& history, int64_t nowMs);
-// Plain-English account of one miss (judge 0) or 50, for the replay viewer and the miss list.
-struct Explain { std::string title, text, tip; };
-Explain explainMiss(const ObjRes& o, float beatMs);
-std::vector<int> mistakes(const std::vector<ObjRes>& objs, bool with50s);  // indexes of misses (and 50s), in time order
+// Plain-English account of a mistake: what happened, what to do instead, and what to practise.
+enum Diag { D_AIM, D_TAP, D_EARLY, D_NOPRESS, D_50, D_LOCK, D_GALLOP, D_RUSH, D_DRAG, D_RUNAIM, D_RUN, NDIAG };
+struct Explain { std::string title, text, tip, practice; Diag diag; };
+// One miss (judge 0) or 50. prev = the note before it, when there is one (to spot a key still held from it).
+Explain explainMiss(const ObjRes& o, float beatMs, const ObjRes* prev = nullptr);
+// The replay viewer's stops, in time order. A burst or stream (3+ notes, each within 1/4 beat of the last) with
+// mistakes in it is one stop, at its first mistake, covering [first, last]; any other mistake is a stop of its own.
+struct Stop { int at, first, last, bad; };  // indexes into objs; bad = mistakes it covers
+std::vector<Stop> coachStops(const std::vector<ObjRes>& objs, float bpm, bool with50s);
+// taps: the play's key presses (see taps()), used to tell finger lock from galloping in a burst or stream.
+Explain explainStop(const std::vector<ObjRes>& objs, const std::vector<Tap>& taps, const Stop& s, float bpm);
+Explain summarize(const std::vector<Explain>& stops);  // the play's main problem and what to practise
 struct MapFeat { float jump, stream, rhythm, slider, ar, od, bpm; int longRun; };
 MapFeat features(const Beatmap& b);
 void cacheFeatures(const std::string& md5, const MapFeat& f);

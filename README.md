@@ -15,10 +15,13 @@ Pick a play on the **Plays** tab and press **Watch replay with the coach**. You'
 - a timeline you can drag, with a red mark for every miss and an amber mark for every 100 or 50
 - the song playing in sync, at 0.25×, 0.5×, 0.75× or 1× (slower speeds lower the pitch)
 
-The coach **stops at each mistake**. It draws a red ring on the note, plus a line from where you clicked to where you should have, and explains what happened, for example:
+The coach **stops at each mistake**. It draws a red ring on the note, plus a line from where you clicked to where you should have, and explains what happened, what to do instead and what to practise. A burst or stream that falls apart is **one stop**, not one per note, and the coach reads your key presses to tell *why* it fell apart: **finger lock** (your fingers stop taking turns, or one key stays down), **galloping** (uneven long-short taps, often from pressing one key too hard), rushing ahead of the music, falling behind, or aim slipping off the path. For example:
 
-> **Missed: aim.** You clicked on time (33 ms early), but your cursor was just outside the edge of the circle. You stopped short of it. This happened in the middle of a stream.
-> **What to do:** Move all the way to the centre of the circle; don't slow down before you arrive.
+> **Finger lock in a stream.** This was a 12-note stream at 188 BPM (80 ms between notes). You kept up for the first 5 notes, then you pressed only 2 times for the last 7 notes, so 5 of them got no press of their own. K2 stayed down for 250 ms, 3.1 notes long: that finger froze on the key.
+> **What to do:** Keep your fingers moving, K1, K2, K1, K2, even when you feel you're falling behind: a late tap still scores a 100 or 50, a frozen finger scores nothing.
+> **Practise:** 12-note streams at about 170 BPM (10% slower than this one) until you can play ten in a row without locking, then go up 5 BPM at a time.
+
+When it isn't stopped, the panel names the play's most common problem and what to practise for it.
 
 Space plays and pauses, the arrow keys jump between mistakes, and Enter continues. Stops can be switched off, or extended to 50s.
 

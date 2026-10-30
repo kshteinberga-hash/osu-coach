@@ -35,6 +35,9 @@ struct PlayStats {
     int skObj[NSKILL], skMiss[NSKILL];  // notes and misses per skill (Timing: hits, no misses); see inSkill
     std::vector<ObjRes> objs;           // per note; scan() drops these to save memory, see reanalyze()
 };
+// One key press in real ms (mods applied), the same clock as ObjRes::t. key 0 = K1/M1, 1 = K2/M2; up = -1 if never released.
+struct Tap { float t, up; int key; };
+std::vector<Tap> taps(const std::vector<Frame>& frames, float rate);
 bool inSkill(const ObjRes& o, Skill s);
 void tallySkills(PlayStats& s);  // fills skObj/skMiss from objs
 int zoneOf(float gapMs);

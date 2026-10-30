@@ -135,6 +135,8 @@ Coach weakness text (`metric`, `fix`) is rewritten in the same plain style.
   - "What to do" with one tip
   - **Continue** (Enter), which resumes and won't stop at the same mistake again until you seek backwards
 - When not stopped, the panel lists every mistake (time + one-line summary). Clicking one jumps there (rows 44 px).
+- **Grouped stops (`coachStops()`):** a burst or stream (3+ notes, each within 1/4 beat of the last) with mistakes in it is one stop, at its first mistake. `explainStop()` reads the key presses (`taps()`, with release times) over the run and names the cause: finger lock (fewer presses than notes, 3+ presses of one key in a row, or a key held over 1.5 notes), galloping (K1→K2 and K2→K1 intervals differ by 30%+ of the note gap; a key held 1.5× longer than the other is called out as pressing too hard), rushing / falling behind (hit error drifts by 12 ms or a quarter gap), or aim (half the misses are aim). Every explanation has a "Practise" line with the run's length and a BPM about 10% below it.
+- When not stopped, the panel heads the list with `summarize()`: the most common cause across the stops and its practice advice.
 
 **`explainMiss(const ObjRes&, const ObjRes* prev, float beatMs)` → `{title, text, tip}`** in `coach.cpp`. It is plain English built from the cause and its context:
 - **Aim:**

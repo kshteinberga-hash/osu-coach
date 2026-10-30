@@ -1,6 +1,7 @@
 #pragma once
 #include "analyze.h"
 #include "audio.h"
+#include "coach.h"
 #include "playback.h"
 
 // Replay viewer state: one play, its map, its per-note analysis, the song and the playback clock.
@@ -16,20 +17,23 @@ struct Viewer {
     std::vector<std::vector<std::pair<float, float>>> paths; // slider path per map object (empty for others)
     struct Press { int t; float x, y; int key; };
     std::vector<Press> presses;                              // key-down events in map time
-    std::vector<int> miss;                                   // indexes into objs of the coach's stops
+    std::vector<Tap> taps;                                   // key presses with releases, real ms like objs
+    std::vector<Stop> spots;                                 // the coach's stops (a broken burst or stream is one)
+    std::vector<Explain> notes;                              // what the coach says at each stop
+    Explain summary;                                         // the play's main problem
     Clock clock;
     Stops stops;
     Audio audio;
     bool coach = true, stop50 = false, muted = false;
     float volume = 0.6f, preempt = 1200, radius = 36;
-    int stoppedAt = -1;                                      // index into objs while paused at a mistake
+    int stoppedAt = -1;                                      // index into spots while paused at a stop
     double endT = 0;
 
     bool open(const std::wstring& osuDir, const PlayStats& p, const std::vector<DbMap>& db);
     int mapT(int i) const { return map.objs[objMap[i]].t; }  // map time of objs[i]
     void setPlaying(bool on);
     void seek(double t);           // also re-arms coach stops after t
-    void jumpTo(int k);            // pause at mistake k (index into miss) and show its explanation
+    void jumpTo(int k);            // pause at stop k (index into spots) and show its explanation
     void setSpeed(float s);
     void applyVolume();
     void rebuildStops();

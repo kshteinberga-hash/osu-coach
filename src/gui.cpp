@@ -441,7 +441,7 @@ void missList(const PlayStats& p, const std::vector<ObjRes>& objs, float h, int6
                 int mt = (int)(o.t * p.rate);
                 ImGui::TableNextRow();
                 cell(cInk, sf("%d:%02d.%03d", mt / 60000, mt / 1000 % 60, mt % 1000)), cell(cMuted, sf("#%d", miss[row] + 1));
-                cell(cInk, explainMiss(o, beat).title), cell(cMuted, whereStr(o, beat));
+                cell(cInk, explainMiss(o, beat, miss[row] > 0 ? &objs[miss[row] - 1] : nullptr).title), cell(cMuted, whereStr(o, beat));
             }
         ImGui::EndTable();
     }
@@ -519,7 +519,7 @@ void tabPlays(App& a) {
                          dateStr(p.when).c_str(), modStr(p.mods).c_str(), 100 * p.acc, p.gmiss, p.err.ur(), p.combo), true);
     ImGui::Dummy({0, S(8)});
     if (button1("Watch replay with the coach")) a.openViewer();
-    const char* hint = "Plays it back with the music and stops at every mistake to explain it.";
+    const char* hint = "Plays it back with the music, stops at each mistake or broken stream, and says what to practise.";
     flow(textSize(BODY, hint).x, S(16));
     ImGui::AlignTextToFramePadding();
     txt(BODY, cMuted, hint);

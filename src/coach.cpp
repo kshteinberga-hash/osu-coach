@@ -235,44 +235,232 @@ Report coach(const std::vector<PlayStats>& plays, std::vector<Day>& hist, int64_
     return r;
 }
 
-Explain explainMiss(const ObjRes& o, float beatMs) {
+Explain explainMiss(const ObjRes& o, float beatMs, const ObjRes* prev) {
     std::string where = o.inStream ? " in the middle of a stream" : o.afterBreak ? " right after a pause" : "";
     if (o.slider) where += " on the start of a slider";
     const char* side = o.err < 0 ? "early" : "late";
+    bool timed = o.gap < 1e8f;
     if (o.judge == 50)
         return {o.err < 0 ? "50: early" : "50: late", fmt("You hit it, but %.0f ms %s, so it only counted as a 50%s.", std::fabs(o.err), side, where.c_str()),
-                "Keep a steady rhythm: listen to the beat instead of watching the circles."};
+                o.err < 0 ? "You were ahead of the music. Wait for the beat: don't hit as soon as the approach circle looks close."
+                          : "You were behind the music. Tap on the beat you hear, instead of reacting when the circle is already there.",
+                "Replay a few maps you know well with the music loud and the hit error bar on, and keep your hits in its centre.", D_50};
     switch (o.cause) {
         case AIM: {
             float out = (o.dist - 1) / 2;  // circle widths beyond the circle's edge (dist is in radii)
             std::string t = fmt("You clicked on time (%.0f ms %s), but your cursor was ", std::fabs(o.err), side) +
                             (out < 0.25f ? std::string("just outside the edge of the circle. ") : fmt("%.1f circle widths outside the circle. ", out));
             t += o.along < 0 ? "You stopped short of it." : o.along > 0 ? "You went past it." : "You were off to the side.";
-            if (o.spacing > 4) t += fmt(" This was a jump of %.1f circle widths", o.spacing / 2) + where + ".";
+            bool jump = o.spacing > 4;
+            if (jump) t += fmt(" This was a jump of %.1f circle widths", o.spacing / 2) + (timed ? fmt(" in %.0f ms", o.gap) : "") + where + ".";
             else if (!where.empty()) t += " This happened" + where + ".";
-            return {"Missed: aim", t,
-                    o.along < 0 ? "Move all the way to the centre of the circle; don't slow down before you arrive."
-                    : o.along > 0 ? "Slow down at the end of the move and stop on the circle."
-                                  : "Watch the circle, not your cursor."};
+            std::string tip = o.along < 0 ? "Move all the way to the centre of the circle; don't slow down before you arrive. Aim for the middle, not the edge: the edge leaves no room for error."
+                            : o.along > 0 ? "Slow down at the end of the move and stop on the circle. Land in the middle and stay still there for a moment before the next move."
+                                          : "Watch the next circle, not your cursor, and move straight to it.";
+            std::string pr = jump && timed
+                ? fmt("Practise jumps of about %.1f circle widths, %.0f ms apart: jump maps a little below your star rating, aiming for the centre of every circle.", o.spacing / 2, o.gap)
+                : std::string("Practise maps with lots of small movements at your level, landing in the centre of each circle instead of anywhere on it.");
+            return {"Missed: aim", t, tip, pr, D_AIM};
         }
-        case TAP:
-            return {"Missed: one press for two notes", "You pressed once for two notes: that press counted for the note before, so this one got nothing" + where + ".",
-                    "Tap every note. In fast notes, switch fingers on each one."};
+        case TAP: {
+            bool held = prev && prev->judge && prev->hold > o.gap;
+            std::string t = held ? fmt("You pressed K%d for the note before and kept it down for %.0f ms, longer than the %.0f ms to this note. One press only hits one note, so this one got nothing",
+                                       prev->key + 1, prev->hold, o.gap) + where + "."
+                                 : "You pressed once for two notes: that press counted for the note before, so this one got nothing" + where + ".";
+            return {"Missed: one press for two notes", t,
+                    held ? "Let go right after each tap: a short, light press. Holding a key down is how finger lock starts."
+                         : "Tap every note. In fast notes, switch fingers on each one: K1, K2, K1, K2.",
+                    timed && o.gap < 200 ? fmt("Practise short bursts at this speed (%.0f ms between notes, %.0f BPM in 1/4 notes), alternating K1 and K2, until every note gets its own press.", o.gap, 15000 / o.gap)
+                                         : std::string("Practise maps with two notes per beat and tap each one on purpose, with alternating fingers."),
+                    D_TAP};
+        }
         case OFFTIME:
-            return {"Missed: too early", fmt("You clicked %.0f ms too early, before this note could be hit%s.", std::fabs(o.err), where.c_str()),
-                    "Wait for the approach circle to touch the circle, and follow the music, not your fingers."};
+            return {"Missed: too early", fmt("You clicked %.0f ms too early, before this note could be hit%s.", std::fabs(o.err), where.c_str()) +
+                        (timed && beatMs > 0 ? fmt(" It came %.2g beat%s after the note before: you expected it sooner.", o.gap / beatMs, o.gap == beatMs ? "" : "s") : ""),
+                    "Wait for the approach circle to touch the circle, and follow the music, not your fingers.",
+                    "Play maps with changing rhythms at a comfortable star rating and tap only on the sounds you hear.", D_EARLY};
         default:
+            if (o.afterBreak)
+                return {"Missed: no click", "You didn't click anywhere near this note. It was the first note after a pause, so you weren't ready for it.",
+                        "During a pause, keep your eyes on the screen and count the last beats before the music comes back, with your cursor already moving to where the first note appears.",
+                        "Play maps with breaks and quick returns, at an approach rate of 8.5 to 9 so the first note doesn't surprise you.", D_NOPRESS};
             return {"Missed: no click", "You didn't click anywhere near this note" + where + ".",
-                    "Keep tapping to the rhythm even when you're lost: a guess can still hit."};
+                    "Keep tapping to the rhythm even when you're lost: a guess can still hit.",
+                    "If you lose track of the notes, practise maps with the same approach rate a bit below your star rating until the patterns read easily.", D_NOPRESS};
     }
-    (void)beatMs;
 }
 
-std::vector<int> mistakes(const std::vector<ObjRes>& objs, bool with50s) {
-    std::vector<int> v;
-    for (size_t i = 0; i < objs.size(); i++)
-        if (objs[i].judge == 0 || (with50s && objs[i].judge == 50)) v.push_back((int)i);
-    return v;
+std::vector<Stop> coachStops(const std::vector<ObjRes>& objs, float bpm, bool with50s) {
+    std::vector<Stop> out;
+    float maxGap = streamMaxGap(bpm);
+    for (size_t i = 0; i < objs.size();) {
+        size_t j = i + 1;
+        while (j < objs.size() && objs[j].gap <= maxGap) j++;
+        bool run = j - i >= 3;
+        for (size_t k = i; k < j; k++) {
+            if (objs[k].judge != 0 && !(with50s && objs[k].judge == 50)) continue;
+            if (run && !out.empty() && out.back().first == (int)i) out.back().bad++;
+            else out.push_back(run ? Stop{(int)k, (int)i, (int)j - 1, 1} : Stop{(int)k, (int)k, (int)k, 1});
+        }
+        i = j;
+    }
+    return out;
+}
+
+namespace {
+struct Run {
+    int n, before, misses = 0, meh = 0, aim = 0, early = 0, along[3]{};  // meh: 100s and 50s; along: short, side, past
+    float gap, bpm;
+    int tailNotes, tailTaps = 0, taps = 0;
+    int sameRun = 1, sameKey = 0, longHold = 0, longKey = 0; float longMs = 0;
+    float step[2]{}, hold[2]{}; int nStep[2]{}, nHold[2]{};  // step[k]: ms from a K(k+1) press to the next press of the other key
+    float errEarly = 0, errLate = 0;
+};
+
+Run measure(const std::vector<ObjRes>& objs, const std::vector<Tap>& taps, const Stop& s) {
+    Run r{};
+    r.n = s.last - s.first + 1, r.before = s.at - s.first, r.tailNotes = s.last - s.at + 1;
+    std::vector<float> gaps;
+    for (int k = s.first + 1; k <= s.last; k++) gaps.push_back(objs[k].gap);
+    std::nth_element(gaps.begin(), gaps.begin() + gaps.size() / 2, gaps.end());
+    r.gap = gaps[gaps.size() / 2], r.bpm = 15000 / r.gap;
+    Acc ea, la;
+    for (int k = s.first; k <= s.last; k++) {
+        auto& o = objs[k];
+        if (!o.judge) {
+            r.misses++, r.aim += o.cause == AIM, r.early += o.cause == OFFTIME;
+            if (o.cause == AIM) r.along[o.along + 1]++;
+        } else {
+            r.meh += o.judge < 300;
+            (2 * (k - s.first) < r.n ? ea : la).add(o.err);
+        }
+    }
+    r.errEarly = (float)ea.mean(), r.errLate = (float)la.mean();
+    if (!ea.n || !la.n) r.errEarly = r.errLate = 0;
+
+    float lo = objs[s.first].t - r.gap * 0.6f, hi = objs[s.last].t + r.gap * 0.6f, tail = objs[s.at].t - r.gap * 0.5f;
+    auto it = std::lower_bound(taps.begin(), taps.end(), lo, [](const Tap& a, float t) { return a.t < t; });
+    const Tap* pv = nullptr;
+    int same = 1;
+    for (; it != taps.end() && it->t <= hi; ++it) {
+        const Tap& a = *it;
+        r.taps++, r.tailTaps += a.t >= tail;
+        float held = a.up >= 0 ? a.up - a.t : 1e9f;
+        if (held <= 1.5f * r.gap) r.hold[a.key] += held, r.nHold[a.key]++;  // a typical press; frozen ones are counted below
+        else if (held > 1.5f * r.gap && a.t + 1.5f * r.gap <= objs[s.last].t) {  // still down when the next note (and more) came
+            r.longHold++;
+            if (std::min(held, hi - a.t) > r.longMs) r.longMs = std::min(held, hi - a.t), r.longKey = a.key;
+        }
+        if (pv) {
+            if (pv->key == a.key) {
+                if (++same > r.sameRun) r.sameRun = same, r.sameKey = a.key;
+            } else same = 1, r.step[pv->key] += a.t - pv->t, r.nStep[pv->key]++;
+        }
+        pv = &a;
+    }
+    for (int k = 0; k < 2; k++) {
+        if (r.nStep[k]) r.step[k] /= r.nStep[k];
+        if (r.nHold[k]) r.hold[k] /= r.nHold[k];
+    }
+    return r;
+}
+
+float round5(float x) { return 5 * std::round(x / 5); }
+}
+
+Explain explainStop(const std::vector<ObjRes>& objs, const std::vector<Tap>& taps, const Stop& s, float bpm) {
+    float beat = bpm > 0 ? 60000 / bpm : 500;
+    if (s.first == s.last) return explainMiss(objs[s.at], beat, s.at > 0 ? &objs[s.at - 1] : nullptr);
+    Run r = measure(objs, taps, s);
+    const char* kind = r.n >= 8 ? "stream" : "burst";
+    std::string head = fmt("This was a %d-note %s at %.0f BPM (%.0f ms between notes).", r.n, kind, r.bpm, r.gap);
+    std::string result = r.misses ? fmt(" %d note%s missed", r.misses, r.misses == 1 ? "" : "s") + (r.meh ? fmt(", %d hit as 100 or 50.", r.meh) : ".")
+                                  : fmt(" %d note%s hit as 100 or 50.", r.meh, r.meh == 1 ? "" : "s");
+    int dropped = r.tailNotes - r.tailTaps;
+    bool aimy = r.misses && 2 * r.aim >= r.misses;
+    bool lock = !aimy && r.misses && (dropped >= 2 || r.sameRun >= 3 || r.longHold);
+    float uneven = std::fabs(r.step[0] - r.step[1]);
+    bool gallop = r.nStep[0] >= 2 && r.nStep[1] >= 2 && uneven >= 0.3f * r.gap;
+    int slowK = r.step[0] >= r.step[1] ? 0 : 1;  // the long step starts on this key
+    std::string gallopNums = fmt("K%d to K%d took %.0f ms on average, K%d to K%d took %.0f ms; both should be %.0f ms", slowK + 1, 2 - slowK, r.step[slowK],
+                                 2 - slowK, slowK + 1, r.step[1 - slowK], r.gap);
+    int hardK = r.hold[0] >= r.hold[1] ? 0 : 1;
+    bool hard = r.nHold[0] >= 2 && r.nHold[1] >= 2 && r.hold[hardK] >= 1.5f * r.hold[1 - hardK] && r.hold[hardK] >= 0.5f * r.gap;
+    std::string hardTxt = hard ? fmt(" You also hold K%d down for %.0f ms per tap against %.0f ms for K%d: you press it too hard, so that finger comes back up late.",
+                                     hardK + 1, r.hold[hardK], r.hold[1 - hardK], 2 - hardK)
+                               : "";
+    std::string notes = r.before == 1 ? "the first note" : fmt("the first %d notes", r.before);
+
+    if (aimy) {
+        std::string how = r.along[0] >= r.along[2] && r.along[0] >= r.along[1] ? "cutting inside the path or stopping short of the notes"
+                        : r.along[2] >= r.along[1] ? "going past the notes" : "drifting off to the side of the path";
+        return {fmt("Aim slipped in a %s", kind), head + fmt(" Your tapping kept up, but on %d note%s your cursor wasn't on the circle: you were %s.", r.aim, r.aim == 1 ? "" : "s", how.c_str()) + result,
+                r.along[2] > r.along[0] ? "Smaller, calmer movements: let the cursor glide from note to note instead of throwing it. Aim and tap together."
+                                        : "Move the cursor through every note, following the shape of the stream. Don't cut corners or let the cursor fall behind your taps.",
+                fmt("Practise spaced streams and streams with turns at about %.0f BPM, slow enough that the cursor stays on every note, then speed up 5 BPM at a time.", round5(r.bpm * 0.9f)),
+                D_RUNAIM};
+    }
+    if (lock) {
+        std::string t = head + (r.before ? fmt(" You kept up for %s, then", notes.c_str()) : std::string(" From the first note,"));
+        t += dropped >= 2 ? fmt(" you pressed only %d time%s for the last %d notes, so %d of them got no press of their own.", r.tailTaps, r.tailTaps == 1 ? "" : "s", r.tailNotes, dropped)
+                          : std::string(" your fingers stopped switching.");
+        if (r.sameRun >= 3) t += fmt(" You pressed K%d %d times in a row instead of switching keys.", r.sameKey + 1, r.sameRun);
+        if (r.longHold) t += fmt(" K%d stayed down for %.0f ms, %.1f notes long: that finger froze on the key.", r.longKey + 1, r.longMs, r.longMs / r.gap);
+        if (gallop) t += " Before that your taps were already uneven (" + gallopNums + ").";
+        t += hardTxt + result;
+        return {fmt("Finger lock in a %s", kind), t,
+                "This is finger lock: your hand tenses up and the fingers stop taking turns. Keep them moving, K1, K2, K1, K2, even when you feel "
+                "you're falling behind: a late tap still scores a 100 or 50, a frozen finger scores nothing. Keep your hand and wrist loose before the "
+                "stream starts, and press the keys lightly.",
+                fmt("Practise %d-note %ss at about %.0f BPM (10%% slower than this one) until you can play ten in a row without locking, then go up 5 BPM at "
+                    "a time. Between maps, tap K1 K2 along to a %.0f BPM metronome, four taps per beat, for 20 seconds at a time, staying relaxed.",
+                    r.n, kind, round5(r.bpm * 0.9f), round5(r.bpm * 0.9f)),
+                D_LOCK};
+    }
+    if (gallop)
+        return {fmt("Galloping in a %s", kind),
+                head + " Your taps came in uneven pairs: " + gallopNums + ". That long-short, ta-dum ta-dum rhythm is galloping." + hardTxt + result,
+                "Press lighter: just hard enough for the key to count, without slamming it to the bottom, and let both fingers bounce back up at the "
+                "same speed. Rest both fingers on the keys so neither has farther to travel. If your keyboard lets you set the actuation point, a "
+                "shallower one helps.",
+                fmt("Play streams at about %.0f BPM, slower than this one, and listen for an even tick-tick-tick instead of ta-dum ta-dum. With the hit "
+                    "error bar on, K1 and K2 hits should land in the same spot; speed up 5 BPM only once they do. Tapping to a metronome at that speed "
+                    "with light presses also helps.", round5(r.bpm * 0.85f)),
+                D_GALLOP};
+    float drift = r.errLate - r.errEarly;
+    if (std::fabs(drift) >= std::max(12.f, 0.25f * r.gap)) {
+        auto start = fmt(" Your first notes were %.0f ms %s, but by the end you were %.0f ms %s", std::fabs(r.errEarly), r.errEarly < 0 ? "early" : "late",
+                         std::fabs(r.errLate), r.errLate < 0 ? "early" : "late");
+        if (drift < 0)
+            return {fmt("Rushed the %s", kind), head + start + ": you sped up and ran ahead of the music." + result,
+                    "Let the music set the speed. Close-together notes look fast, but they're no faster than the beat: tap with the music, not with "
+                    "what you see, and stay relaxed so your fingers don't run off.",
+                    fmt("Play streams at %.0f BPM with the music loud and keep the hit error bar centred from the first note to the last.", round5(r.bpm)), D_RUSH};
+        return {fmt("Fell behind in the %s", kind), head + start + ": this speed is at the edge of what your fingers can do right now." + result,
+                "Don't tense up to go faster; stay loose and keep alternating. Tension is what slows fingers down and then locks them.",
+                fmt("Build speed: practise streams at %.0f BPM until they're clean and centred, then go up 5 BPM at a time towards %.0f.", round5(r.bpm * 0.9f),
+                    round5(r.bpm)), D_DRAG};
+    }
+    return {fmt("Broke in a %s", kind),
+            head + (r.before ? fmt(" You kept up for %s.", notes.c_str()) : std::string()) +
+                (r.early ? fmt(" %d note%s pressed too early to count.", r.early, r.early == 1 ? " was" : "s were") : std::string()) + hardTxt + result,
+            "Keep a steady rhythm through the whole run, and switch fingers on every note: K1, K2, K1, K2.",
+            fmt("Practise %d-note %ss at about %.0f BPM until you can hit them clean, then speed up 5 BPM at a time.", r.n, kind, round5(r.bpm * 0.9f)), D_RUN};
+}
+
+Explain summarize(const std::vector<Explain>& stops) {
+    static const char* const name[NDIAG] = {"aim", "one press for two notes", "clicking too early", "notes you didn't click", "50s",
+                                            "finger lock", "galloping", "rushing streams", "falling behind in streams", "aim in streams", "broken streams"};
+    int n[NDIAG]{}, best = -1;
+    for (auto& e : stops) n[e.diag]++;
+    for (int d = 0; d < NDIAG; d++)
+        if (n[d] && (best < 0 || n[d] > n[best])) best = d;
+    if (best < 0) return {"", "", "", "", NDIAG};
+    std::string list;
+    for (int d = 0; d < NDIAG; d++)
+        if (n[d]) list += (list.empty() ? "" : ", ") + fmt("%s %d", name[d], n[d]);
+    auto& e = *std::find_if(stops.begin(), stops.end(), [&](const Explain& x) { return x.diag == best; });
+    return {fmt("Most stops: %s (%d of %zu)", name[best], n[best], stops.size()), "Stops by cause: " + list + ".", e.tip, e.practice, (Diag)best};
 }
 
 MapFeat features(const Beatmap& b) {
