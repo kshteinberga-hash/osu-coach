@@ -46,7 +46,7 @@ ScanResult scan(const std::wstring& dir, std::atomic<int>* done, std::atomic<int
             if (done) ++*done;
             if (!readOsr(files[i], r, false)) { corrupt++; continue; }
             if (r.mode != 0) { other++; continue; }
-            if (r.mods & (128 | 2048 | 8192)) { modSkip++; continue; }
+            if (r.mods & (mod::RX | mod::AUTO | mod::AP)) { modSkip++; continue; }
             auto it = byMd5.find(r.md5);
             auto b = it == byMd5.end() ? nullptr : mapFor(*it->second);
             if (!b) { deleted++; continue; }
@@ -75,13 +75,23 @@ std::vector<ObjRes> reanalyze(const std::wstring& dir, const PlayStats& p, const
     return analyze(r, b, p.stars).objs;
 }
 
+static std::string jsonEscape(std::string_view s) {
+    std::string o;
+    for (char c : s) {
+        if (c == '"' || c == '\\') o += '\\', o += c;
+        else if ((unsigned char)c < 0x20) { char b[8]; snprintf(b, sizeof b, "\\u%04x", c); o += b; }
+        else o += c;
+    }
+    return o;
+}
+
 void dumpJsonl(const ScanResult& r, const std::wstring& out) {
     FILE* f = _wfopen(out.c_str(), L"wb");
     if (!f) return;
     for (auto& p : r.plays) {
         fprintf(f, "{\"file\":\"%s\",\"md5\":\"%s\",\"when\":%lld,\"stars\":%.3f,\"mods\":%d,\"n300\":%d,\"n100\":%d,\"n50\":%d,"
                    "\"miss\":%d,\"smiss\":%d,\"smissc\":%d,\"nobj\":%d,\"ur\":%.2f,\"mean\":%.2f,\"bObj\":[%d,%d,%d,%d],\"bMiss\":[%d,%d,%d,%d]}\n",
-                narrow(p.file).c_str(), p.md5.c_str(), (long long)p.when, p.stars, p.mods, p.g300, p.g100, p.g50, p.gmiss,
+                jsonEscape(narrow(p.file)).c_str(), jsonEscape(p.md5).c_str(), (long long)p.when, p.stars, p.mods, p.g300, p.g100, p.g50, p.gmiss,
                 p.sMiss, p.sMissCircle, p.nobj, p.err.ur(), p.err.mean(), p.bObj[0], p.bObj[1], p.bObj[2], p.bObj[3],
                 p.bMiss[0], p.bMiss[1], p.bMiss[2], p.bMiss[3]);
     }

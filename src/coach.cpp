@@ -1,6 +1,8 @@
 #include "coach.h"
 #include <algorithm>
 #include <cmath>
+#include <cstdarg>
+#include <cstdio>
 #include <ctime>
 #include <atomic>
 #include <map>
@@ -152,7 +154,7 @@ Report coach(const std::vector<PlayStats>& plays, std::vector<Day>& hist, int64_
             double base = ppEstimate(p.stars, p.od, tot, p.acc, p.gmiss);
             if (s == TIMING) {
                 if (bestUr <= 0 || p.err.n < 2) continue;
-                double w300 = (80 - 6 * p.od) / p.rate, sd = bestUr / 10, m = p.err.mean();  // real ms, like sd and m
+                double w300 = hitWindow300(p.od) / p.rate, sd = bestUr / 10, m = p.err.mean();  // real ms, like sd and m
                 double p300 = phi((w300 - m) / sd) - phi((-w300 - m) / sd);
                 double acc = (p300 * 300 + (1 - p300) * 100) / 300 * (tot - p.gmiss) / tot;
                 cost += std::max(0.0, ppEstimate(p.stars, p.od, tot, (float)acc, p.gmiss) - base);
@@ -235,7 +237,7 @@ Report coach(const std::vector<PlayStats>& plays, std::vector<Day>& hist, int64_
 
 MapFeat features(const Beatmap& b) {
     MapFeat f{0, 0, 0, 0, b.ar, b.od, b.bpm, 0};
-    float rad = 54.4f - 4.48f * b.cs;
+    float rad = circleRadius(b.cs);
     std::vector<float> sp, gap;
     const HitObj* p = nullptr;
     int n = 0, jumps = 0, rhythm = 0, sliders = 0;

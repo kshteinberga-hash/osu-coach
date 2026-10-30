@@ -53,6 +53,8 @@ static void test_osu_ar_default() {
     Beatmap b;
     CHECK(parseOsu("[Difficulty]\nOverallDifficulty:7\n", b));
     NEAR(b.ar, 7, 0);
+    CHECK(parseOsu("[Difficulty]\nOverallDifficulty: +7.5\nCircleSize:4e0\nHPDrainRate:x\n", b));
+    NEAR(b.od, 7.5, 0); NEAR(b.cs, 4, 0); NEAR(b.hp, 0, 0);
     CHECK(!parseOsu("[General]\nMode: 3\n", b));
 }
 
@@ -185,6 +187,20 @@ static void test_deleted_map() {
     std::filesystem::remove_all(dir);
 }
 
+static void test_dump_escapes() {
+    ScanResult r;
+    r.plays.push_back(PlayStats{});
+    r.plays[0].file = L"a\"b\\c.osr", r.plays[0].md5 = "m";
+    auto p = std::filesystem::temp_directory_path() / L"osu-coach-dump.jsonl";
+    dumpJsonl(r, p.wstring());
+    std::ifstream f(p);
+    std::string line;
+    std::getline(f, line);
+    CHECK(line.starts_with("{\"file\":\"a\\\"b\\\\c.osr\",\"md5\":\"m\","));
+    f.close();
+    std::filesystem::remove(p);
+}
+
 int main() {
     test_deleted_map();
     test_osu_basic();
@@ -197,6 +213,7 @@ int main() {
     test_osr_long_lifebar();
     test_real_files();
     test_unicode_path();
+    test_dump_escapes();
     void analyzeTests(); analyzeTests();
     void coachTests(); coachTests();
     std::printf("%d checks, %d failures\n", t_run, t_fail);

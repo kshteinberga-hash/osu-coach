@@ -4,6 +4,17 @@
 #include <string_view>
 #include <vector>
 
+// Mod bits as stored in replays and osu!.db (NC replays also carry DT, PF also carries SD).
+namespace mod {
+constexpr int NF = 1, EZ = 2, HD = 8, HR = 16, SD = 32, DT = 64, RX = 128, HT = 256, NC = 512, FL = 1024, AUTO = 2048,
+              SO = 4096, AP = 8192, PF = 16384;
+}
+// osu!stable formulas. Hit windows are +- ms in map time (divide by the play rate for real time).
+inline float circleRadius(float cs) { return 54.4f - 4.48f * cs; }
+inline float hitWindow300(float od) { return 80 - 6 * od; }
+inline float hitWindow100(float od) { return 140 - 8 * od; }
+inline float hitWindow50(float od) { return 200 - 10 * od; }
+
 struct HitObj { float x, y; int t, end; uint8_t kind; bool nc; };  // kind: 0 circle, 1 slider, 2 spinner
 struct Beatmap { float ar, cs, od, hp, bpm; int bid; std::string title; std::vector<HitObj> objs; };
 

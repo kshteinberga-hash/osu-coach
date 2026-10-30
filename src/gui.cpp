@@ -54,9 +54,10 @@ const ImVec4 kGood{0.45f, 0.85f, 0.5f, 1}, kBad{0.95f, 0.45f, 0.4f, 1}, kDim{0.6
 double pct(double a, double b) { return b > 0 ? 100 * a / b : 0; }
 
 std::string modStr(int m) {
-    static const std::pair<int, const char*> t[] = {{1, "NF"}, {2, "EZ"}, {8, "HD"}, {16, "HR"}, {32, "SD"}, {512, "NC"}, {64, "DT"}, {256, "HT"}, {1024, "FL"}, {4096, "SO"}, {16384, "PF"}};
+    using namespace mod;
+    static const std::pair<int, const char*> t[] = {{NF, "NF"}, {EZ, "EZ"}, {HD, "HD"}, {HR, "HR"}, {SD, "SD"}, {NC, "NC"}, {DT, "DT"}, {HT, "HT"}, {FL, "FL"}, {SO, "SO"}, {PF, "PF"}};
     std::string s;
-    for (auto [b, n] : t) if ((m & b) && !(b == 64 && (m & 512)) && !(b == 32 && (m & 16384))) s += n;
+    for (auto [b, n] : t) if ((m & b) && !(b == DT && (m & NC)) && !(b == SD && (m & PF))) s += n;
     return s.empty() ? "NM" : s;
 }
 std::string dateStr(int64_t ms) {

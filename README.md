@@ -13,7 +13,7 @@ It's one ~1 MB Windows exe with no installer, no account and no API key. It only
 | **Timing** | hit error per note, mean (early/late), unstable rate, % of hits within ±15/30/50 ms, error histogram, UR per key |
 | **Aim** | cursor distance from the note centre (in circle radii) per spacing bucket (dense ≤2r, stream 2–4r, jump 4–7r, big >7r), jump-distance histogram, miss rate per screen quadrant, overshoot vs undershoot |
 | **Speed** | stream segments (4+ evenly spaced 1/4 notes within 3r): BPM, alternation, same-finger double taps, miss rate, early/late on notes 1–4 vs 5+; tapping by gap (<100, 100–130, 130–260, 260+ ms) with UR, alternation and finger lock (a key still held when the next press comes); stamina (longest run with no break over 500 ms) |
-| **Reading** | miss rate on the first note after a break vs mid-flow; AR below 8 vs AR 8+ |
+| **Reading** | miss rate on the first note after a break vs mid-flow; AR below 8 vs AR 8+ (after HR, EZ, DT, HT) |
 | **Per play** | every miss with its map timestamp (`m:ss.mmm`), rhythm, jump size and cause (aim / tap used up / outside the hit window / no press) |
 
 ## Coach

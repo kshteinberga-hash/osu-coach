@@ -3,6 +3,7 @@
 #include <charconv>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 static std::string_view trim(std::string_view s) {
     while (!s.empty() && (s.front() == ' ' || s.front() == '\t' || s.front() == '\r')) s.remove_prefix(1);
@@ -12,7 +13,13 @@ static std::string_view trim(std::string_view s) {
 
 static std::string_view skipBom(std::string_view s) { return s.starts_with("\xEF\xBB\xBF") ? s.substr(3) : s; }
 
-static double num(std::string_view s) { return std::strtod(std::string(trim(s)).c_str(), nullptr); }
+static double num(std::string_view s) {  // 0 when s is not a number, like strtod
+    s = trim(s);
+    if (s.starts_with('+')) s.remove_prefix(1);
+    double v = 0;
+    std::from_chars(s.data(), s.data() + s.size(), v);
+    return v;
+}
 
 // Splits s on c into at most n fields, returns count.
 static int split(std::string_view s, char c, std::string_view* f, int n) {
@@ -211,7 +218,7 @@ bool readOsr(const std::wstring& path, Replay& r, bool withFrames) {
 }
 
 float starsFor(const DbMap& m, int mods) {
-    int key = mods & (2 | 16 | 64 | 256);
+    int key = mods & (mod::EZ | mod::HR | mod::DT | mod::HT);
     float nm = -1;
     for (auto& [k, v] : m.stars) { if (k == key) return v; if (k == 0) nm = v; }
     return nm;

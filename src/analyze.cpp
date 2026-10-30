@@ -56,13 +56,13 @@ PlayStats analyze(const Replay& r, const Beatmap& b, float stars) {
     s.bpm = b.bpm;
 
     float od = b.od, cs = b.cs, ar = b.ar;
-    if (r.mods & 16) od = std::min(10.f, od * 1.4f), cs = std::min(10.f, cs * 1.3f), ar = std::min(10.f, ar * 1.4f);
-    if (r.mods & 2) od *= 0.5f, cs *= 0.5f, ar *= 0.5f;
-    float rate = r.mods & (64 | 512) ? 1.5f : r.mods & 256 ? 0.75f : 1.f;
+    if (r.mods & mod::HR) od = std::min(10.f, od * 1.4f), cs = std::min(10.f, cs * 1.3f), ar = std::min(10.f, ar * 1.4f);
+    if (r.mods & mod::EZ) od *= 0.5f, cs *= 0.5f, ar *= 0.5f;
+    float rate = r.mods & (mod::DT | mod::NC) ? 1.5f : r.mods & mod::HT ? 0.75f : 1.f;
     float preempt = (ar < 5 ? 1800 - 120 * ar : 1200 - 150 * (ar - 5)) / rate;  // approach time in real ms
     s.rate = rate, s.od = od, s.ar = preempt > 1200 ? (1800 - preempt) / 120 : 5 + (1200 - preempt) / 150, s.bpm *= rate;
-    float w300 = 80 - 6 * od, w100 = 140 - 8 * od, w50 = 200 - 10 * od, rad = 54.4f - 4.48f * cs;
-    bool flip = r.mods & 16;
+    float w300 = hitWindow300(od), w100 = hitWindow100(od), w50 = hitWindow50(od), rad = circleRadius(cs);
+    bool flip = r.mods & mod::HR;
 
     // key-down edges -> presses with release times
     std::vector<Press> ps;
