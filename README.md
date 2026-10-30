@@ -10,10 +10,12 @@ It's a single ~1.5 MB Windows exe: no installer, no account, no API key. It only
 
 Pick a play on the **Plays** tab and press **Watch replay with the coach**. You'll see:
 
-- the circles, sliders, spinners and approach circles, timed and sized with your mods (HR is shown flipped, the way you played it)
-- your cursor with a short trail, a dot wherever you clicked (one colour per key), and K1/K2 lighting up while held
-- a timeline you can drag, with a red mark for every miss and an amber mark for every 100 or 50
-- the song playing in sync, at 0.25×, 0.5×, 0.75× or 1× (slower speeds lower the pitch)
+- the circles, sliders, spinners and approach circles in combo colours, timed and sized with your mods (HR is shown flipped, the way you played it); sliders show their ball, the follow circle while you hold, and reverse arrows
+- your cursor's path through the actual replay frames, a dot wherever you clicked, and K1/K2/M1/M2 lighting up while held
+- your 300s, 100s, 50s and misses so far, your UR, and the timing of the last note
+- **key lanes** under the playfield: a zoomed strip around the playhead with every note (by result) and a bar for each key press showing how long you held it, in ms. Scroll to zoom, drag to scrub, click to jump
+- a timeline of the whole play, with a red mark for every miss and an amber mark for every 100 or 50; hover it to see the time
+- the song playing in sync, at 0.25×, 0.5×, 0.75× or 1× (slower speeds lower the pitch), with buttons to skip 5 s back or forward
 
 The coach **stops at each mistake**. It draws a red ring on the note, plus a line from where you clicked to where you should have, and explains what happened, what to do instead and what to practise. A burst or stream that falls apart is **one stop**, not one per note, and the coach reads your key presses to tell *why* it fell apart: **finger lock** (your fingers stop taking turns, or one key stays down), **galloping** (uneven long-short taps, often from pressing one key too hard), rushing ahead of the music, falling behind, or aim slipping off the path. For example:
 
