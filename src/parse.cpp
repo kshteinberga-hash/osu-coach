@@ -288,14 +288,14 @@ static bool decodeFrames(const uint8_t* src, size_t n, std::vector<Frame>& out) 
     }
     out.clear();
     out.reserve(txt.size() / 16);
-    const char* q = txt.c_str();
+    const char *q = txt.c_str(), *e = q + txt.size();
     int t = 0;
     while (*q) {
-        char* end;
-        long w = strtol(q, &end, 10); if (*end != '|') break; q = end + 1;
-        float x = strtof(q, &end); if (*end != '|') break; q = end + 1;
-        float y = strtof(q, &end); if (*end != '|') break; q = end + 1;
-        long k = strtol(q, &end, 10); q = end;
+        const char* end;
+        long w = 0; end = std::from_chars(q, e, w).ptr; if (*end != '|') break; q = end + 1;
+        float x = 0; end = std::from_chars(q, e, x).ptr; if (*end != '|') break; q = end + 1;
+        float y = 0; end = std::from_chars(q, e, y).ptr; if (*end != '|') break; q = end + 1;
+        long k = 0; q = std::from_chars(q, e, k).ptr;
         while (*q && *q != ',') q++;
         if (*q == ',') q++;
         if (w == -12345) continue;
